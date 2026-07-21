@@ -558,15 +558,42 @@ function fromMatrix(aoa){
   return out;
 }
 
+const HAS_XLSX = (typeof XLSX!=="undefined");
+
+function parseCSV(text){
+  // minimal RFC-4180 parser -> array of arrays
+  const rows=[]; let row=[], cell="", q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){
+      if(ch==='"'){ if(text[i+1]==='"'){ cell+='"'; i++; } else q=false; }
+      else cell+=ch;
+    }else{
+      if(ch==='"') q=true;
+      else if(ch===','){ row.push(cell); cell=""; }
+      else if(ch==='\n'){ row.push(cell); rows.push(row); row=[]; cell=""; }
+      else if(ch==='\r'){ /* skip */ }
+      else cell+=ch;
+    }
+  }
+  if(cell!==""||row.length){ row.push(cell); rows.push(row); }
+  // coerce numeric-looking cells
+  return rows.map(r=>r.map(v=>{ const t=v.trim(); return t!=="" && !isNaN(t) ? Number(t) : v; }));
+}
+
 function handleFile(file){
   const name=file.name.toLowerCase();
+  const isCsv=name.endsWith(".csv");
+  if(!isCsv && !HAS_XLSX){
+    toast("This hosted version reads CSV — export your sheet as CSV, or download the tool for .xlsx");
+    return;
+  }
   const rd=new FileReader();
   rd.onload=e=>{
     try{
       let aoa, job="Uploaded file";
-      if(name.endsWith(".csv")){
-        const wb=XLSX.read(e.target.result,{type:"string"});
-        aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
+      if(isCsv){
+        aoa=parseCSV(String(e.target.result));
       }else{
         const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
         const ws=wb.Sheets[wb.SheetNames[0]];
@@ -581,7 +608,7 @@ function handleFile(file){
       render(); toast(`Loaded ${rows.length} rows from ${file.name}`);
     }catch(err){ console.error(err); toast("Couldn't read that file — expected the Franklin Park layout"); }
   };
-  if(name.endsWith(".csv")) rd.readAsText(file); else rd.readAsArrayBuffer(file);
+  if(isCsv) rd.readAsText(file); else rd.readAsArrayBuffer(file);
 }
 
 function csvDownload(filename, matrix){
@@ -624,7 +651,11 @@ function initTheme(){
 ["groupBy","weightBy","ship","markup","fltSource","fltCost","fltPos"].forEach(id=>{
   $(id).addEventListener(id==="ship"||id==="markup"?"input":"change", render);
 });
-$("file").addEventListener("change",e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
+$("file").addEventListener("change",e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=""; });
+if(!HAS_XLSX){
+  $("file").setAttribute("accept",".csv");
+  document.querySelector(".filelabel").firstChild.textContent="Upload CSV";
+}
 $("loadSample").addEventListener("click",loadSample);
 $("expSummary").addEventListener("click",exportSummary);
 $("expLines").addEventListener("click",exportLines);
