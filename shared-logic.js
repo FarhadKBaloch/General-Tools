@@ -43,11 +43,11 @@ function dryingInfo(hrs, wet){
 
 const DISEASES=[
   {name:'Botrytis (gray mold)', wet:8,  tmin:55, tmax:75,
-   note:'Needs a film of moisture ~8–12 h with RH 85%+ at 55–75°F.',
+   note:'Needs a film of moisture ~8 to 12 h with RH 85%+ at 55 to 75°F.',
    src:'UMass / Penn State Extension',
-   act:'Heat and vent 2–3× per hour after sunset and at sunrise; space plants and clear spent flowers.'},
+   act:'Heat and vent 2 to 3 times per hour after sunset and at sunrise; space plants and clear spent flowers.'},
   {name:'Downy mildew',         wet:6,  tmin:50, tmax:75,
-   note:'Spores germinate and infect within ~6–12 h of free water at 50–75°F.',
+   note:'Spores germinate and infect within ~6 to 12 h of free water at 50 to 75°F.',
    src:'UC IPM / UConn Extension',
    act:'Scout leaf undersides early in the day; avoid overhead irrigation and late-day watering.'},
   {name:'Basil downy mildew',   wet:4,  tmin:41, tmax:86,

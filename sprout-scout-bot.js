@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Sprout Scout — daily Slack brief
+ * Sprout Scout: daily Slack brief
  *
  * Posts one message per morning telling growers what to watch for today:
  * irrigation call, disease/leaf-wetness risk, pest pressure, frost, and light.
@@ -24,9 +24,9 @@ const CFG = {
   dryRun: process.argv.includes('--dry-run'),
 };
 
-const f0 = n => (n == null ? '—' : Math.round(n));
-const f1 = n => (n == null ? '—' : (Math.round(n * 10) / 10).toFixed(1));
-const hr12 = h => (h == null ? '—' : h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`);
+const f0 = n => (n == null ? '-' : Math.round(n));
+const f1 = n => (n == null ? '-' : (Math.round(n * 10) / 10).toFixed(1));
+const hr12 = h => (h == null ? '-' : h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`);
 
 // ---------- fetch ----------
 async function getForecast() {
@@ -131,7 +131,7 @@ function buildBrief(t) {
     });
     risks.forEach(r => chips.push(r.name.replace(' (gray mold)', '')));
   } else if (t.lwdRun >= 4) {
-    lines.push({ icon: '🍃', text: `Foliage wet ~${t.lwdRun}h${dryPhrase} — below infection thresholds, but keep vents and fans running.` });
+    lines.push({ icon: '🍃', text: `Foliage wet ~${t.lwdRun}h${dryPhrase}, below infection thresholds, but keep vents and fans running.` });
   }
   if (t.rainHours >= 3) {
     lines.push({ icon: '🌧️', text: `Rain falls about ${t.rainHours}h today, so venting will help more than anything else.` });
@@ -143,7 +143,7 @@ function buildBrief(t) {
     if (t.tmin <= 32) {
       const chk = new Date(t.date.getFullYear(), t.date.getMonth(), t.date.getDate() + 3)
         .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-      lines.push({ icon: '❄️', text: `*Freeze risk.* Low near ${f0(t.tmin)}°F. Move tender crops in or cover, and check heaters. Cold injury often is not visible for 2–14 days, so re-inspect *${chk}* rather than judging tomorrow morning.` });
+      lines.push({ icon: '❄️', text: `*Freeze risk.* Low near ${f0(t.tmin)}°F. Move tender crops in or cover, and check heaters. Cold injury often is not visible for 2 to 14 days, so re-inspect *${chk}* rather than judging tomorrow morning.` });
       chips.push('Freeze');
     } else if (t.tmin <= 36 && calmClear) {
       lines.push({ icon: '❄️', text: `*Frost risk* despite a low of ${f0(t.tmin)}°F. On a clear, calm night foliage radiates heat and can reach freezing even when the air does not. Cover tender material.` });
@@ -173,10 +173,11 @@ function buildBrief(t) {
     const mid = out * (L.GH_TRANSMIT_LO + L.GH_TRANSMIT_HI) / 2;
     const v = L.dliVerdict(mid);
     if (v && v.lvl === 'low') {
-      lines.push({ icon: '🌥️', text: `*Low light.* ~${f1(out)} mol/m²/d outdoors (~${f1(out * L.GH_TRANSMIT_LO)}–${f1(out * L.GH_TRANSMIT_HI)} inside). ${v.note} Hold growth regulators and ease back on feed.` });
+      lines.push({ icon: '🌥️', text: `*Low light.* ~${f1(out)} mol/m²/d outdoors (~${f1(out * L.GH_TRANSMIT_LO)} to ${f1(out * L.GH_TRANSMIT_HI)} inside). ${v.note} Hold growth regulators and ease back on feed.` });
       chips.push('Low light');
     } else if (v && v.lvl === 'high') {
-      lines.push({ icon: '☀️', text: `*High light.* ~${f1(out)} mol/m²/d outdoors. ${v.note} Check shade and watch tender material.` });
+      const hiNote = v.note.replace(/^High light\.\s*/, '');
+      lines.push({ icon: '☀️', text: `*High light.* ~${f1(out)} mol/m²/d outdoors. ${hiNote} Check shade and watch tender material.` });
       chips.push('High light');
     }
   }
@@ -200,7 +201,7 @@ function buildPayload(t, brief) {
   ].filter(Boolean).join('  ·  ');
 
   const blocks = [
-    { type: 'header', text: { type: 'plain_text', text: `🌱 Sprout Scout — ${dateStr}`, emoji: true } },
+    { type: 'header', text: { type: 'plain_text', text: `🌱 ${dateStr}`, emoji: true } },
     { type: 'context', elements: [{ type: 'mrkdwn', text: `*${CFG.site}*  ·  ${summary}` }] },
   ];
   if (brief.chips.length) {
@@ -215,12 +216,12 @@ function buildPayload(t, brief) {
     elements: [{
       type: 'mrkdwn',
       text: '_Outdoor conditions. Greenhouse crops are buffered by your controls. '
-        + 'Leaf wetness is an estimate (±1–2h) and a disease or pest listing means conditions *favor* it, not that it is present — scout to confirm._',
+        + 'Leaf wetness is an estimate (within 1 to 2 hours) and a disease or pest listing means conditions *favor* it, not that it is present. Scout to confirm._',
     }],
   });
 
   // text is the notification fallback shown in the sidebar and on mobile
-  return { text: `Sprout Scout ${dateStr}: ${brief.chips.join(', ') || 'nothing unusual flagged'}`, blocks };
+  return { text: `${dateStr}: ${brief.chips.join(', ') || 'nothing unusual flagged'}`, blocks };
 }
 
 async function post(payload) {
