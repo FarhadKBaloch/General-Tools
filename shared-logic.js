@@ -5,6 +5,36 @@
 
 const RH_WET=90;          // threshold %
 
+const COVER_ON_MONTH = 9,  COVER_ON_DAY = 25;   // Oct 25: plastic goes back on
+const COVER_OFF_MONTH = 4, COVER_OFF_DAY = 10;  // May 10: plastic comes off
+function isCovered(date){
+  if(!date) return null;                        // unknown: caller decides
+  const m=date.getMonth(), d=date.getDate();
+  if(m > COVER_ON_MONTH || (m===COVER_ON_MONTH && d>=COVER_ON_DAY)) return true;   // late Oct-Dec
+  if(m < COVER_OFF_MONTH || (m===COVER_OFF_MONTH && d<COVER_OFF_DAY)) return true;  // Jan-early May
+  return false;
+}
+
+const GH_MIN_TEMP = 68;   // indoor daytime baseline while COVERED, °F
+function houseTemp(f){
+  if(f.tmax==null) return null;
+  // Only lift to the indoor baseline when the plastic is actually on.
+  const covered = isCovered(f.date);
+  if(covered===false) return f.tmax;            // open house: outdoor temp is real
+  return Math.max(f.tmax, GH_MIN_TEMP);
+}
+
+function houseRH(f){
+  if(f.rh==null) return null;
+  const covered = isCovered(f.date);
+  if(covered===false) return f.rh;              // open house: outdoor humidity is real
+  return f.tmax!=null && f.tmax < GH_MIN_TEMP ? Math.max(f.rh, 60) : f.rh;
+}
+
+function lightTransmitRange(date){
+  return isCovered(date)===false ? [1,1] : [GH_TRANSMIT_LO, GH_TRANSMIT_HI];
+}
+
 const DRY_HOLD = 3;   // hours it must remain dry to count as "dried"
 function dryingInfo(hrs, wet){
   if(!hrs.length) return {dryHour:null, staysWet:false, reWets:false, rainHours:0, lastWetHour:null, dayDryHours:0};
@@ -73,45 +103,60 @@ const PESTS=[
    // Ohio is humid: daily-MEAN RH rarely falls below 60, so a strict dry test
    // almost never fired here despite mites being a serious local pest. Relaxed
    // to below-average humidity for the region, or any hot day regardless of RH.
-   test:f=> f.tmax!=null && (f.tmax>=85 || (f.tmax>=80 && (f.rh==null || f.rh<68))),
+   test:f=>{ const t=houseTemp(f), r=houseRH(f);
+     return t!=null && (t>=85 || (t>=80 && (r==null || r<68))); },
    why:'Hot, dry conditions drive rapid mite reproduction; a generation can close in 5-7 days and populations double quickly in heat.',
    src:'UMD / OSU Extension',
    act:'Check leaf undersides on the warmest, driest benches. Raising humidity and syringing foliage slows them.'},
   {name:'Aphids', key:'aphid',
-   test:f=> f.tmax!=null && f.tmax>=70 && f.tmax<92,
+   test:f=>{ const t=houseTemp(f); return t!=null && t>=70 && t<92; },
    why:'Development speeds up markedly once daytime temperatures reach about 70F, and females bear live young, so colonies build fast.',
    src:'MSU / UConn Extension',
    act:'Inspect new growth and leaf undersides on soft-growth crops; look for honeydew and shed skins.'},
   {name:'Thrips', key:'thrips',
-   test:f=> f.tmax!=null && f.tmax>=75,
+   test:f=>{ const t=houseTemp(f); return t!=null && t>=75; },
    why:'Warm conditions accelerate the thrips life cycle and adults move readily between crops.',
    src:'Rutgers Extension',
    act:'Tap flowers over white paper and check blue sticky cards; thrips hide in flowers and growing points.'},
   {name:'Fungus gnats', key:'gnat',
-   test:f=> (f.rh!=null && f.rh>=75) || (f.rain!=null && f.rain>=0.2),
+   test:f=>{ const r=houseRH(f);
+     return (r!=null && r>=75) || (f.rain!=null && f.rain>=0.2); },
    why:'Persistently damp media and high humidity favor larval development at the media surface.',
    src:'Rutgers Extension',
    act:'Check the media surface and use yellow cards near the pot line; let the surface dry between waterings.'},
-  {name:'Meadow spittlebug', key:'spittlebug',
+  // Meadow spittlebug is ONE generation per year, but two very different stages.
+  // Nymphs make the froth (mid-Apr to mid-Jun); adults then feed for months and
+  // females return in Sep-Oct to lay eggs. Millcreek growers report seeing them
+  // Jun-Sep, which is the adult stage. Splitting these keeps the advice correct:
+  // froth is a cosmetic sales problem, adults are a scouting note.
+  {name:'Meadow spittlebug (nymphs)', key:'spittlebug',
    test:f=>{
-     // Validated against central Ohio (Delaware County) normals. Spittle masses
-     // appear late April through early June and persist about 3-4 weeks, so the
-     // window runs Apr 15 - Jun 20 rather than whole calendar months.
      if(!f.date) return false;                         // seasonal pest: no date, no call
      const m=f.date.getMonth(), day=f.date.getDate();  // 3=Apr, 4=May, 5=Jun
      if(m<3 || m>5) return false;
      if(m===3 && day<15) return false;                 // before mid-April: eggs not yet hatched
      if(m===5 && day>20) return false;                 // after ~Jun 20: nymphs have molted to adults
-     // Ohio normal highs run 57F (mid-Apr) to 81F (early Jun), so this range
-     // covers the season without excluding it. Cap raised to 86F so an early
-     // heat spike does not suppress the call during peak nymph activity.
+     // Ohio normal highs run 57F (mid-Apr) to 81F (early Jun).
      return f.tmax!=null && f.tmax>=55 && f.tmax<=86 && (f.rh==null || f.rh>=55);
    },
-   why:'Nymphs feed inside frothy spittle masses on stems from late April through early June, and each mass persists about 3 to 4 weeks. Humidity and temperature are most limiting in the early nymphal stages, so mild damp spells favor them. One generation per year.',
-   src:'UMN / Ohio nursery extension',
-   act:'Check stems and leaf sheaths on Achillea, Coreopsis, Phlox, Potentilla and Boltonia first, which are the usual perennial hosts. Damage is largely cosmetic, but customers object to the froth during peak spring sales. A gloved hand or a forceful jet of water removes it; treat only above a few per square foot.'},
+   why:'Nymphs feed inside frothy spittle masses on stems from late April through early June, maturing in about five to eight weeks. This is the stage that produces the visible froth and the only stage that causes meaningful feeding damage.',
+   src:'UMN / Nursery Management / Ohio extension',
+   act:'Check stems and leaf sheaths on Achillea, Coreopsis, Phlox, Potentilla and Boltonia first. Damage is largely cosmetic, but customers object to the froth during peak spring sales. A gloved hand or a forceful jet of water removes it; treat only above a few per square foot.'},
+  {name:'Meadow spittlebug (adults)', key:'spittlebug_adult',
+   test:f=>{
+     if(!f.date) return false;
+     const m=f.date.getMonth(), day=f.date.getDate();  // 5=Jun, 9=Oct
+     if(m<5 || m>9) return false;                      // Jun through Oct
+     if(m===5 && day<15) return false;                 // adults appear from about mid-June
+     // Adults are mobile and tolerate a wider range than nymphs; no humidity test.
+     return f.tmax!=null && f.tmax>=60;
+   },
+   why:'After the froth disappears, adults keep feeding for up to six months and stay in the crop through summer, with females returning in September and October to lay overwintering eggs. Adults do not make spittle, jump when disturbed, and cause little direct damage.',
+   src:'UC IPM / UMN Extension / Crop Protection Network',
+   act:'Nothing usually needs treating at this stage. Worth noting where you see them: adults now mark where eggs will be laid this fall, which is where froth will appear next April. Clearing weedy grass and debris around those beds reduces next spring\u2019s nymphs.'},
   {name:'Whitefly', key:'whitefly',
-   test:f=> f.tmax!=null && f.tmax>=75 && f.rh!=null && f.rh>=60,
+   test:f=>{ const t=houseTemp(f), r=houseRH(f);
+     return t!=null && t>=75 && r!=null && r>=60; },
    why:'Warm, humid conditions shorten the whitefly cycle and support continuous generations.',
    src:'Extension IPM guidance',
    act:'Flip leaves on soft growth and watch yellow cards; look for nymphs on leaf undersides.'}
@@ -161,5 +206,6 @@ function lagFor(reason){
 }
 
 module.exports = { RH_WET, DRY_HOLD, dryingInfo, DISEASES, diseaseRisk,
+  isCovered, lightTransmitRange, COVER_ON_MONTH, COVER_OFF_MONTH, houseTemp, houseRH, GH_MIN_TEMP,
   GDD_BASE, gddFor, PESTS, pestRisk, DLI_PER_MJ, GH_TRANSMIT_LO, GH_TRANSMIT_HI,
   dliFrom, dliVerdict, LAG_MODEL, lagFor };

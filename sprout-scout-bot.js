@@ -139,14 +139,18 @@ function buildBrief(t) {
 
   // frost / cold
   const calmClear = (t.wind == null || t.wind <= 8) && (t.rain == null || t.rain < 0.01);
+  const openHouse = L.isCovered(t.date) === false;
+  const shelter = openHouse
+    ? 'The houses are uncovered, so there is no protection: move tender material under cover or plan to re-cover.'
+    : 'Check heaters and cover tender material.';
   if (t.tmin != null) {
     if (t.tmin <= 32) {
       const chk = new Date(t.date.getFullYear(), t.date.getMonth(), t.date.getDate() + 3)
         .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-      lines.push({ icon: '❄️', text: `*Freeze risk.* Low near ${f0(t.tmin)}°F. Move tender crops in or cover, and check heaters. Cold injury often is not visible for 2 to 14 days, so re-inspect *${chk}* rather than judging tomorrow morning.` });
+      lines.push({ icon: '❄️', text: `*Freeze risk.* Low near ${f0(t.tmin)}°F. ${shelter} Cold injury often is not visible for 2 to 14 days, so re-inspect *${chk}* rather than judging tomorrow morning.` });
       chips.push('Freeze');
     } else if (t.tmin <= 36 && calmClear) {
-      lines.push({ icon: '❄️', text: `*Frost risk* despite a low of ${f0(t.tmin)}°F. On a clear, calm night foliage radiates heat and can reach freezing even when the air does not. Cover tender material.` });
+      lines.push({ icon: '❄️', text: `*Frost risk* despite a low of ${f0(t.tmin)}°F. On a clear, calm night foliage radiates heat and can reach freezing even when the air does not. ${shelter}` });
       chips.push('Frost risk');
     } else if (t.tmin <= 38) {
       lines.push({ icon: '🧊', text: `*Cold night.* Low near ${f0(t.tmin)}°F. Hold hardening-off of tender material and verify heat is running.` });
@@ -170,10 +174,11 @@ function buildBrief(t) {
   // light
   if (t.rad != null) {
     const out = L.dliFrom(t.rad);
-    const mid = out * (L.GH_TRANSMIT_LO + L.GH_TRANSMIT_HI) / 2;
+    const [tLo, tHi] = L.lightTransmitRange(t.date);
+    const mid = out * (tLo + tHi) / 2;
     const v = L.dliVerdict(mid);
     if (v && v.lvl === 'low') {
-      lines.push({ icon: '🌥️', text: `*Low light.* ~${f1(out)} mol/m²/d outdoors (~${f1(out * L.GH_TRANSMIT_LO)} to ${f1(out * L.GH_TRANSMIT_HI)} inside). ${v.note} Hold growth regulators and ease back on feed.` });
+      lines.push({ icon: '🌥️', text: `*Low light.* ~${f1(out)} mol/m²/d${tLo === 1 ? ' at the crop' : ` outdoors (~${f1(out * tLo)} to ${f1(out * tHi)} inside)`}. ${v.note} Hold growth regulators and ease back on feed.` });
       chips.push('Low light');
     } else if (v && v.lvl === 'high') {
       const hiNote = v.note.replace(/^High light\.\s*/, '');
