@@ -13,6 +13,7 @@
  */
 
 const L = require('./shared-logic.js');
+const W = require('./watchlist.js');
 
 // ---------- config ----------
 const CFG = {
@@ -103,7 +104,7 @@ function buildToday(j) {
 }
 
 // ---------- guidance (mirrors the dashboard's dayGuidance) ----------
-function buildBrief(t) {
+function buildBrief(t, watch) {
   const lines = [];
   const chips = [];
 
@@ -128,6 +129,12 @@ function buildBrief(t) {
       ? (t.reWets ? `, drying briefly around ${hr12(t.dryHour)} before wetting up again` : `, drying near ${hr12(t.dryHour)}`)
       : ', with no reliable drying window';
   if (risks.length) {
+    // Remember to re-check when symptoms would actually be visible.
+    const dl = L.lagFor('diseased');
+    W.schedule(watch, { today: t.date, kind: 'disease',
+      label: risks.map(r => r.name).join(', '),
+      detail: `foliage stayed wet ~${t.lwdRun}h at ${f0(t.wetTemp)}°F`,
+      lagLo: dl.lo, lagHi: dl.hi });
     // Lag must be measured from the FORECAST day, not from whenever this
     // script happens to run, or the date drifts.
     const lagDays = 8;
@@ -156,6 +163,9 @@ function buildBrief(t) {
     if (t.tmin <= 32) {
       const chk = new Date(t.date.getFullYear(), t.date.getMonth(), t.date.getDate() + 3)
         .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+      const cl = L.lagFor('dead');
+      W.schedule(watch, { today: t.date, kind: 'freeze', label: `Freeze, low ${f0(t.tmin)}°F`,
+        detail: openHouse ? 'houses were uncovered' : 'houses covered', lagLo: cl.lo, lagHi: cl.hi });
       lines.push({ icon: '❄️', text: `*Freeze risk.* Low near ${f0(t.tmin)}°F. ${shelter} Cold injury often is not visible for 2 to 14 days, so re-inspect *${chk}* rather than judging tomorrow morning.` });
       chips.push('Freeze');
     } else if (t.tmin <= 36 && calmClear) {
@@ -169,6 +179,9 @@ function buildBrief(t) {
 
   // heat
   if (t.tmax != null && t.tmax >= 88) {
+    const hl = L.lagFor('dead');
+    W.schedule(watch, { today: t.date, kind: 'heat', label: `Heat stress, high ${f0(t.tmax)}°F`,
+      detail: 'watch newly potted and tender material', lagLo: hl.lo, lagHi: hl.hi });
     lines.push({ icon: '🔥', text: `*Heat stress.* High near ${f0(t.tmax)}°F. Water early, avoid midday transplanting, watch newly potted material for wilt.` });
     chips.push('Heat stress');
   }
@@ -195,6 +208,23 @@ function buildBrief(t) {
       chips.push('High light');
     }
   }
+
+  // --- follow-ups from earlier warnings, now due ---
+  const dueNow = W.due(watch, t.date);
+  for (const e of dueNow) {
+    const flagged = W.parseKey(e.flaggedOn)
+      .toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const ago = Math.round((t.date - W.parseKey(e.flaggedOn)) / 86400000);
+    if (e.kind === 'disease') {
+      lines.push({ icon: '🔎', text: `*Follow-up: check for disease symptoms now.* On *${flagged}* (${ago} days ago) conditions favored *${e.label}* (${e.detail}). Symptoms from that window would be showing about now. Inspect those crops before assuming they are clean.` });
+    } else if (e.kind === 'freeze') {
+      lines.push({ icon: '🔎', text: `*Follow-up: check for cold injury now.* A freeze was flagged on *${flagged}* (${ago} days ago, ${e.detail}). Cold damage blackens and collapses days later, so this is when it becomes visible.` });
+    } else if (e.kind === 'heat') {
+      lines.push({ icon: '🔎', text: `*Follow-up: check for heat damage now.* Heat stress was flagged on *${flagged}* (${ago} days ago). ${e.detail}.` });
+    }
+    chips.push('Follow-up');
+  }
+  W.markReported(watch, dueNow);
 
   if (!lines.some(l => l.icon !== '💧')) {
     lines.push({ icon: '✅', text: 'Nothing unusual flagged today. Routine scouting and normal irrigation.' });
@@ -272,7 +302,9 @@ async function post(payload) {
   try {
     const j = await getForecast();
     const today = buildToday(j);
-    const brief = buildBrief(today);
+    const watch = W.load();
+    const brief = buildBrief(today, watch);   // schedules new entries and marks due ones
+    W.save(watch, today.date);                // persist AFTER buildBrief has mutated it
     const payload = buildPayload(today, brief);
 
     if (CFG.dryRun || !CFG.webhook) {
