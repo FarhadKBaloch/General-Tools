@@ -5,6 +5,9 @@ on:
     - cron: '0 10 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   brief:
     runs-on: ubuntu-latest
@@ -13,6 +16,16 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
-      - run: node sprout-scout-bot.js
+
+      - name: Post the daily brief
+        run: node sprout-scout-bot.js
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Save the follow-up watchlist
+        run: |
+          git config user.name  "sprout-scout-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A watchlist.json
+          git diff --staged --quiet || git commit -m "Update watchlist [skip ci]"
+          git push
