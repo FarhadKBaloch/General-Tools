@@ -25,6 +25,10 @@ const js = scripts[scripts.length - 1];
 
 const WANTED = [
   [/const RH_WET=90;[^\n]*/,                          'RH_WET'],
+  [/const COVER_ON_MONTH[\s\S]*?function isCovered\(date\)\{[\s\S]*?\n\}/, 'isCovered'],
+  [/const GH_MIN_TEMP = \d+;[\s\S]*?function houseTemp\(f\)\{[\s\S]*?\n\}/, 'houseTemp'],
+  [/function houseRH\(f\)\{[\s\S]*?\n\}/, 'houseRH'],
+  [/function lightTransmitRange\(date\)\{[\s\S]*?\n\}/, 'lightTransmitRange'],
   [/const DRY_HOLD = 3;[\s\S]*?\nfunction dryingInfo\(hrs, wet\)\{[\s\S]*?\n\}/, 'dryingInfo'],
   [/const DISEASES=\[[\s\S]*?\n\];/,                  'DISEASES'],
   [/function diseaseRisk\(d\)\{[\s\S]*?\n\}/,         'diseaseRisk'],
@@ -61,6 +65,7 @@ const out = `// AUTO-EXTRACTED from sprout-scout.html. Do not edit by hand.
 ${parts.join('\n\n')}
 
 module.exports = { RH_WET, DRY_HOLD, dryingInfo, DISEASES, diseaseRisk,
+  isCovered, lightTransmitRange, COVER_ON_MONTH, COVER_OFF_MONTH, houseTemp, houseRH, GH_MIN_TEMP,
   GDD_BASE, gddFor, PESTS, pestRisk, DLI_PER_MJ, GH_TRANSMIT_LO, GH_TRANSMIT_HI,
   dliFrom, dliVerdict, LAG_MODEL, lagFor };
 `;

@@ -30,7 +30,7 @@ proper Slack app instead.
    **Activate Incoming Webhooks** to **On**.
 4. Click **Add New Webhook to Workspace**.
 5. Choose the channel to post in (e.g. `#growing-team`) and click **Allow**.
-6. Copy the webhook URL.
+6. Copy the webhook URL
 
 **Treat that URL like a password.** Anyone who has it can post to that channel.
 Do not commit it to a repository — Slack scans public repos and will revoke it.
@@ -67,7 +67,7 @@ you are done with setup.
 `crontab -e`, then add:
 
 ```cron
-# 5:00am every day. Use absolute paths: cron has a minimal environment.
+# 6:00am every day. Use absolute paths: cron has a minimal environment.
 0 6 * * * SLACK_WEBHOOK_URL='https://hooks.slack.com/services/...' /usr/bin/node /full/path/to/slackbot/sprout-scout-bot.js >> /var/log/sprout-scout.log 2>&1
 ```
 
@@ -79,21 +79,45 @@ Put the repo on GitHub, add the webhook under
 
 ```yaml
 name: Sprout Scout daily brief
+
 on:
   schedule:
-    - cron: '0 11 * * *'   # 11:00 UTC = 6:00am Eastern (7:00am during EDT)
+    - cron: '0 10 * * *'   # 10:00 UTC = 6am Eastern (5am during winter)
   workflow_dispatch:        # lets you trigger it by hand to test
+
+permissions:
+  contents: write           # required so the bot can commit watchlist.json
+
 jobs:
   brief:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '24' }
-      - run: node slackbot/sprout-scout-bot.js
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Post the daily brief
+        run: node sprout-scout-bot.js
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Save the follow-up watchlist
+        run: |
+          git config user.name  "sprout-scout-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A watchlist.json
+          git diff --staged --quiet || git commit -m "Update watchlist [skip ci]"
+          git push
 ```
+
+The paths above assume the `.js` files sit at the **root** of your repository.
+If you keep them in a `slackbot/` folder instead, prefix both the `node` command
+and the `git add` path with `slackbot/`.
+
+You must also enable write access once: **Settings → Actions → General →
+Workflow permissions → Read and write permissions**. Without it the save step
+fails with a permission error.
 
 Note that GitHub's scheduler runs in UTC and does not adjust for daylight saving,
 so the local time shifts by an hour twice a year. Adjust the cron line if that
@@ -119,6 +143,27 @@ All optional except the webhook:
 | `SITE_LON` | `-83.1745` | Longitude |
 | `SITE_NAME` | `Ostrander, OH` | Shown in the message header |
 | `SITE_TZ` | `America/New_York` | Timezone for the forecast |
+| `SLACK_MENTION` | `alerts` | Who gets notified (see below) |
+
+### Notifying growers
+
+`SLACK_MENTION` controls the ping at the top of each brief:
+
+| Value | Behaviour |
+|---|---|
+| `channel` | `@channel` every day. Notifies everyone in the channel, **including people who are offline**. |
+| `here` | `@here` every day. Notifies only members currently active. Gentler for a daily post. |
+| `alerts` | **Default.** `@channel` only on days with a freeze, frost, cold night, or heat stress. Silent otherwise. |
+| `none` | No ping. The message simply appears in the channel. |
+| a literal mention | Passed straight through, e.g. `<!subteam^S012ABC>` for a user group like @growers. |
+
+`alerts` is the default because a daily `@channel` is the most common reason
+teams start muting a bot. The brief still posts every morning either way; the
+setting only controls whether it interrupts anyone. Disease and pest conditions deliberately do **not** trigger the alert
+ping, because favourable conditions occur most summer days.
+
+To notify a specific group instead of the whole channel, create a user group in
+Slack (paid feature), then use its ID: `SLACK_MENTION='<!subteam^S012ABC|@growers>'`.
 
 ---
 
@@ -136,6 +181,29 @@ the dashboard structure changed enough that a block cannot be found, rather than
 silently producing a stale copy.
 
 ---
+
+## Symptom-lag follow-ups
+
+Plants show damage days after the event that caused it, so a warning on its own
+is not enough: somebody has to look again once symptoms would be visible.
+
+When the bot flags a disease risk, freeze, or heat-stress day, it records a
+follow-up in `watchlist.json` and reminds the channel when that damage would
+actually be showing:
+
+> 🔎 **Follow-up: check for disease symptoms now.** On **Thursday, July 23**
+> (9 days ago) conditions favored *Botrytis, Downy mildew, Basil downy mildew*
+> (foliage stayed wet ~12h at 70°F). Symptoms from that window would be showing
+> about now.
+
+The windows come from the same lag model the dashboard uses: about 5-12 days for
+disease, 2-14 days for cold or heat injury. Reminders fire once, at the midpoint
+of the window, and stay pending until the window closes so a missed or delayed
+run does not lose them.
+
+`watchlist.json` is committed back to the repository after each run, which is why
+the workflow needs `permissions: contents: write`. It is readable, so you can open
+it any time to see what is pending.
 
 ## Notes on behaviour
 

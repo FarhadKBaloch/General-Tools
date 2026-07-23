@@ -304,8 +304,10 @@ async function post(payload) {
     const today = buildToday(j);
     const watch = W.load();
     const brief = buildBrief(today, watch);   // schedules new entries and marks due ones
-    W.save(watch, today.date);                // persist AFTER buildBrief has mutated it
     const payload = buildPayload(today, brief);
+    // NOTE: the watchlist is saved only AFTER a successful post (below). Saving
+    // here would mark reminders as reported even when the post fails, silently
+    // losing them. A dry run never saves at all.
 
     if (CFG.dryRun || !CFG.webhook) {
       if (!CFG.webhook && !CFG.dryRun) {
@@ -317,6 +319,7 @@ async function post(payload) {
       process.exit(CFG.webhook || CFG.dryRun ? 0 : 1);
     }
     await post(payload);
+    W.save(watch, today.date);   // safe to persist: the message actually went out
     console.log(`Posted Sprout Scout brief for ${today.key}`);
   } catch (err) {
     console.error(`Sprout Scout failed: ${err.message}`);
