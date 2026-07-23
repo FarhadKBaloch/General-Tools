@@ -22,6 +22,15 @@ const CFG = {
   site: process.env.SITE_NAME || 'Ostrander, OH',
   tz: process.env.SITE_TZ || 'America/New_York',
   dryRun: process.argv.includes('--dry-run'),
+  // Who to notify. Options:
+  //   'alerts'   -> DEFAULT. @channel only on freeze/frost/cold-night/heat-stress
+  //                 days. The brief still posts daily; it just does not interrupt
+  //                 anyone unless there is a same-day decision to make.
+  //   'channel'  -> @channel every day, including offline members
+  //   'here'     -> @here every day, only members currently active
+  //   'none'     -> no mention, the message just appears
+  //   '<@U123>'  -> any literal Slack mention, e.g. a user group like <!subteam^S123>
+  mention: process.env.SLACK_MENTION || 'alerts',
 };
 
 const f0 = n => (n == null ? '-' : Math.round(n));
@@ -194,6 +203,20 @@ function buildBrief(t) {
 }
 
 // ---------- Slack payload ----------
+// Decide what mention prefix to use for this message.
+function mentionPrefix(brief) {
+  const m = String(CFG.mention).toLowerCase();
+  if (m === 'none') return '';
+  // Only ping for events that need a decision TODAY. Disease and pest chips are
+  // deliberately excluded: favourable conditions occur most summer days, so
+  // including them would ping almost daily and defeat the purpose.
+  const urgent = brief.chips.some(c => /freeze|frost|cold night|heat stress/i.test(c));
+  if (m === 'alerts') return urgent ? '<!channel> ' : '';
+  if (m === 'here') return '<!here> ';
+  if (m === 'channel') return '<!channel> ';
+  return `${CFG.mention} `;   // literal mention string passed through
+}
+
 function buildPayload(t, brief) {
   const dateStr = t.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const gdd = L.gddFor(t.tmax, t.tmin);
@@ -205,10 +228,16 @@ function buildPayload(t, brief) {
     gdd != null ? `${f1(gdd)} GDD` : null,
   ].filter(Boolean).join('  ·  ');
 
+  const mention = mentionPrefix(brief);
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: `🌱 ${dateStr}`, emoji: true } },
-    { type: 'context', elements: [{ type: 'mrkdwn', text: `*${CFG.site}*  ·  ${summary}` }] },
   ];
+  // A header block cannot render a mention, so the ping goes in a section
+  // directly beneath it where Slack will actually link and notify.
+  if (mention) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `${mention}here is today's brief:` } });
+  }
+  blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `*${CFG.site}*  ·  ${summary}` }] });
   if (brief.chips.length) {
     blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: brief.chips.map(c => `\`${c}\``).join('  ') }] });
   }
@@ -226,7 +255,7 @@ function buildPayload(t, brief) {
   });
 
   // text is the notification fallback shown in the sidebar and on mobile
-  return { text: `${dateStr}: ${brief.chips.join(', ') || 'nothing unusual flagged'}`, blocks };
+  return { text: `${mention}${dateStr}: ${brief.chips.join(', ') || 'nothing unusual flagged'}`, blocks };
 }
 
 async function post(payload) {
