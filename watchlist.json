@@ -11,6 +11,16 @@
       "lagLo": 5,
       "lagHi": 12,
       "windowEnd": "2026-08-04"
+    },
+    {
+      "flaggedOn": "2026-07-23",
+      "checkOn": "2026-08-01",
+      "kind": "disease",
+      "label": "Botrytis (gray mold), Downy mildew, Basil downy mildew",
+      "detail": "foliage stayed wet ~9h at 55°F",
+      "lagLo": 5,
+      "lagHi": 12,
+      "windowEnd": "2026-08-04"
     }
   ]
 }
