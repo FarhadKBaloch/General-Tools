@@ -116,12 +116,14 @@ function buildBrief(t, watch) {
   //      rain just wastes some water. So never skip on heat unless rain is a
   //      near certainty, and even then water early and let rain top up.
   //   3. Nothing later in the brief may issue its own watering advice.
-  const covered = L.isCovered(t.date) === true;
+  const covered = L.isCovered(t.date) !== false;   // unknown date defaults to covered (safer: rain ignored)
   const heatDay = t.tmax != null && t.tmax >= 88;
   const amt = t.rain != null ? t.rain : 0;
   const pop = t.pop != null ? t.pop : 0;
   const rainConfident = pop >= 60 && amt >= 0.15;   // both a real chance AND a useful amount
-  const rainPossible = !rainConfident && (amt >= 0.15 || pop >= 40);
+  // Needs BOTH a usable amount and a real chance. A high probability of a
+  // trace (0.02") waters nothing and must not reduce a round.
+  const rainPossible = !rainConfident && amt >= 0.10 && pop >= 25;
   const highDemand = t.et0 != null && t.et0 >= 0.22;
   const windNote = t.wind != null && t.wind >= 15 ? `, and winds to ${f0(t.wind)} mph will pull moisture faster` : '';
   const rainPhrase = `${pop}% chance, ${f1(amt)}" forecast`;
@@ -129,7 +131,13 @@ function buildBrief(t, watch) {
   let irrMode;
   if (covered) {
     // Plastic is on: rain lands on the roof, so it plays no part in the decision.
-    if (highDemand) {
+    // A closed house on a hot day runs well above the outdoor reading, and ET0 is
+    // calculated from outdoor air, so it understates demand. Treat heat as high demand.
+    if (heatDay) {
+      irrMode = 'heavy';
+      lines.push({ icon: '💧', text: `*Water early and thoroughly.* High near ${f0(t.tmax)}°F outside and the houses are still covered, so it will run hotter than that inside and containers will dry faster than the ET₀ figure suggests${windNote}. Rain does not reach the crop today.` });
+      chips.push('Water early');
+    } else if (highDemand) {
       irrMode = 'heavy';
       lines.push({ icon: '💧', text: `*Water early and thoroughly.* High demand (ET₀ ${f1(t.et0)}")${windNote}. The houses are covered, so any rain today does not reach the crop.` });
       chips.push('Water early');
@@ -228,7 +236,15 @@ function buildBrief(t, watch) {
   // pests
   const pests = L.pestRisk(t);
   if (pests.length) {
-    lines.push({ icon: '🐛', text: `*Pest watch.* Conditions favor *${pests.map(p => p.name).join('*, *')}*. ${pests[0].act}` });
+    // The standard mite remedy is to raise humidity and syringe the foliage, which
+    // directly contradicts disease advice to dry the canopy. On a day with disease
+    // risk, wetting leaves feeds the pathogen, so drop that clause and say why.
+    let pestAct = pests[0].act;
+    if (risks.length && /humidity|syringing/i.test(pestAct)) {
+      pestAct = pestAct.replace(/\s*Raising humidity and syringing foliage slows them\./i, '')
+        + ' Normally raising humidity and syringing foliage would slow mites, but hold off today: wetting the canopy would feed the disease risk above. Rely on scouting and airflow instead.';
+    }
+    lines.push({ icon: '🐛', text: `*Pest watch.* Conditions favor *${pests.map(p => p.name).join('*, *')}*. ${pestAct.trim()}` });
     pests.slice(0, 2).forEach(p => chips.push(p.name.replace('Two-spotted ', '').replace('Spider mites (two-spotted)', 'Spider mites')));
   }
 
