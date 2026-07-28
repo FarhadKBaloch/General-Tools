@@ -108,15 +108,53 @@ function buildBrief(t, watch) {
   const lines = [];
   const chips = [];
 
-  // irrigation
-  const wetSoon = (t.pop != null && t.pop >= 60) || (t.rain != null && t.rain >= 0.15);
-  if (wetSoon) {
-    lines.push({ icon: '🚱', text: `*Hold off watering.* Rain likely${t.pop != null ? ` (${t.pop}% chance` : ''}${t.rain != null ? `, ${f1(t.rain)}" expected)` : ')'}. Let the weather do the work.` });
+  // ---- irrigation: ONE decision, made once ----
+  // Three things this has to get right, all learned the hard way:
+  //   1. Rain only reaches the crop when the plastic is OFF.
+  //   2. On a heat-stress day the risk is asymmetric. Skipping and being wrong
+  //      can wilt or kill containers within the day; watering and then getting
+  //      rain just wastes some water. So never skip on heat unless rain is a
+  //      near certainty, and even then water early and let rain top up.
+  //   3. Nothing later in the brief may issue its own watering advice.
+  const covered = L.isCovered(t.date) === true;
+  const heatDay = t.tmax != null && t.tmax >= 88;
+  const amt = t.rain != null ? t.rain : 0;
+  const pop = t.pop != null ? t.pop : 0;
+  const rainConfident = pop >= 60 && amt >= 0.15;   // both a real chance AND a useful amount
+  const rainPossible = !rainConfident && (amt >= 0.15 || pop >= 40);
+  const highDemand = t.et0 != null && t.et0 >= 0.22;
+  const windNote = t.wind != null && t.wind >= 15 ? `, and winds to ${f0(t.wind)} mph will pull moisture faster` : '';
+  const rainPhrase = `${pop}% chance, ${f1(amt)}" forecast`;
+
+  let irrMode;
+  if (covered) {
+    // Plastic is on: rain lands on the roof, so it plays no part in the decision.
+    if (highDemand) {
+      irrMode = 'heavy';
+      lines.push({ icon: '💧', text: `*Water early and thoroughly.* High demand (ET₀ ${f1(t.et0)}")${windNote}. The houses are covered, so any rain today does not reach the crop.` });
+      chips.push('Water early');
+    } else {
+      irrMode = 'normal';
+      lines.push({ icon: '💧', text: `*Normal irrigation.* Demand is moderate (ET₀ ${t.et0 != null ? f1(t.et0) + '"' : 'n/a'}). Houses are covered, so rain is not a factor. Water early so foliage dries before evening.` });
+    }
+  } else if (heatDay) {
+    // Open houses, but too hot to gamble on the forecast.
+    irrMode = 'water-anyway';
+    lines.push({ icon: '💧', text: `*Water early, do not wait for the rain.* High near ${f0(t.tmax)}°F with ${rainConfident ? `rain likely (${rainPhrase})` : `only a ${rainPhrase}`}. ${rainConfident ? 'Even so, on a day this hot it is not worth gambling on timing' : 'If that rain misses you, containers can wilt before the next round'}${windNote}. Water early and let any rain top it up.` });
+    chips.push('Water early');
+  } else if (rainConfident) {
+    irrMode = 'skip';
+    lines.push({ icon: '🚱', text: `*Hold off watering.* Rain likely (${rainPhrase}) and the houses are open, so it reaches the crop. Let the weather do the work.` });
     chips.push('Skip watering');
-  } else if (t.et0 != null && t.et0 >= 0.22) {
-    lines.push({ icon: '💧', text: `*Water early and thoroughly.* High demand (ET₀ ${f1(t.et0)}")${t.wind != null && t.wind >= 15 ? `, and winds to ${f0(t.wind)} mph will pull moisture faster` : ''}.` });
+  } else if (rainPossible) {
+    irrMode = 'reduce';
+    lines.push({ icon: '💧', text: `*Water lightly and watch the sky.* Rain is uncertain (${rainPhrase}), so do not rely on it. A reduced round now leaves room if it arrives.` });
+  } else if (highDemand) {
+    irrMode = 'heavy';
+    lines.push({ icon: '💧', text: `*Water early and thoroughly.* High demand (ET₀ ${f1(t.et0)}")${windNote}.` });
     chips.push('Water early');
   } else {
+    irrMode = 'normal';
     lines.push({ icon: '💧', text: `*Normal irrigation.* Demand is moderate (ET₀ ${t.et0 != null ? f1(t.et0) + '"' : 'n/a'}). Water early so foliage dries before evening.` });
   }
 
@@ -182,7 +220,8 @@ function buildBrief(t, watch) {
     const hl = L.lagFor('dead');
     W.schedule(watch, { today: t.date, kind: 'heat', label: `Heat stress, high ${f0(t.tmax)}°F`,
       detail: 'watch newly potted and tender material', lagLo: hl.lo, lagHi: hl.hi });
-    lines.push({ icon: '🔥', text: `*Heat stress.* High near ${f0(t.tmax)}°F. Water early, avoid midday transplanting, watch newly potted material for wilt.` });
+    // Irrigation is decided above; do not restate or contradict it here.
+    lines.push({ icon: '🔥', text: `*Heat stress.* High near ${f0(t.tmax)}°F. Avoid midday transplanting and watch newly potted and small-container material for wilt${irrMode === 'skip' ? '. Check moisture by hand before relying on the forecast rain' : ''}.` });
     chips.push('Heat stress');
   }
 
