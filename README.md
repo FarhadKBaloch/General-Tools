@@ -1,3 +1,10 @@
+> **Also in this repository:** [Vehicle maintenance log](VEHICLE-MAINTENANCE.md) —
+> QR codes on the tractor, gator, truck and sprayer that open a pre-filled
+> maintenance request and notify the right people. No server, no cost.
+> (`vehicle-qr-labels.html`, `maintenance-notify.gs`, `qr.js`)
+
+---
+
 # Sprout Scout — Slack daily brief
 
 Posts one message each morning telling growers what to watch for that day:

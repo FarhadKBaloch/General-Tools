@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vehicle QR labels</title>
+<style>
+  :root {
+    --ink: #1c2321;
+    --muted: #5f6b66;
+    --line: #d7ded9;
+    --bg: #f6f8f6;
+    --accent: #2f6f4e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  header {
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+    padding: 20px 24px;
+  }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .panel h2 { margin: 0 0 14px; font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  label { display: block; font-weight: 600; font-size: 14px; margin: 14px 0 5px; }
+  label:first-of-type { margin-top: 0; }
+  .hint { font-weight: 400; color: var(--muted); font-size: 13px; }
+  input[type=text], textarea, select {
+    width: 100%;
+    padding: 9px 11px;
+    font: inherit;
+    font-size: 14px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+    color: inherit;
+  }
+  textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  input[type=text] { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .row > div { flex: 1 1 180px; }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 6px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+  }
+  button.secondary { background: #fff; color: var(--accent); }
+  button:hover { filter: brightness(1.08); }
+  .actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; align-items: center; }
+  .status { font-size: 14px; color: var(--muted); }
+  .status.error { color: #a8321f; font-weight: 600; }
+  .detected {
+    margin-top: 10px;
+    font-size: 13px;
+    background: #eef5f0;
+    border: 1px solid #cfe2d6;
+    border-radius: 6px;
+    padding: 9px 11px;
+    color: #2b4a3a;
+  }
+  .detected code { background: rgba(0,0,0,.06); padding: 1px 4px; border-radius: 3px; }
+
+  /* ---- label sheet ---- */
+  #sheet { display: grid; gap: 12px; }
+  .label {
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    padding: 14px;
+    background: #fff;
+    text-align: center;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .label .name {
+    font-weight: 800;
+    font-size: 20px;
+    line-height: 1.2;
+    margin-bottom: 10px;
+    word-break: break-word;
+  }
+  .label svg { width: 100%; height: auto; max-width: 260px; display: block; }
+  .label .cta {
+    margin-top: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .label .sub { font-size: 11px; color: #4a544f; margin-top: 3px; }
+
+  @media print {
+    header, .panel, .noprint { display: none !important; }
+    body { background: #fff; }
+    main { max-width: none; padding: 0; }
+    #sheet { gap: 0; }
+    .label { border-radius: 0; margin: 0; }
+    @page { margin: 0.4in; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Vehicle QR labels</h1>
+  <p>Generates printable QR labels that open a pre-filled maintenance request for each vehicle. Runs entirely in this page &mdash; nothing is uploaded.</p>
+</header>
+
+<main>
+  <div class="panel noprint">
+    <h2>1. Where the QR codes should point</h2>
+
+    <label for="mode">Link source</label>
+    <select id="mode">
+      <option value="prefill">One pre-filled Google Form link, one vehicle per line (recommended)</option>
+      <option value="explicit">A separate link for each vehicle</option>
+    </select>
+
+    <div id="prefillFields">
+      <label for="baseUrl">
+        Pre-filled form link
+        <span class="hint">In your Google Form: &#8942; menu &rarr; <em>Get pre-filled link</em> &rarr; pick any one vehicle &rarr; <em>Get link</em> &rarr; <em>Copy link</em>.</span>
+      </label>
+      <input type="text" id="baseUrl" placeholder="https://docs.google.com/forms/d/e/.../viewform?usp=pp_url&amp;entry.1234567890=Tractor">
+      <div id="detected" class="detected" hidden></div>
+
+      <label for="vehicles">
+        Vehicles <span class="hint">One per line. The name must match the form's answer option exactly.</span>
+      </label>
+      <textarea id="vehicles" spellcheck="false">Tractor
+Gator
+Truck
+Sprayer</textarea>
+    </div>
+
+    <div id="explicitFields" hidden>
+      <label for="pairs">
+        One line per label, as <code>Name | https://link</code>
+      </label>
+      <textarea id="pairs" spellcheck="false">Tractor | https://example.com/tractor
+Gator | https://example.com/gator</textarea>
+    </div>
+  </div>
+
+  <div class="panel noprint">
+    <h2>2. Label appearance</h2>
+    <div class="row">
+      <div>
+        <label for="columns">Labels per row</label>
+        <select id="columns">
+          <option value="1">1 &mdash; very large</option>
+          <option value="2" selected>2 &mdash; large (recommended)</option>
+          <option value="3">3 &mdash; medium</option>
+          <option value="4">4 &mdash; small</option>
+        </select>
+      </div>
+      <div>
+        <label for="ecc">Error correction</label>
+        <select id="ecc">
+          <option value="M">M &mdash; 15% damage tolerance</option>
+          <option value="Q" selected>Q &mdash; 25% (recommended outdoors)</option>
+          <option value="H">H &mdash; 30%, densest code</option>
+        </select>
+      </div>
+      <div>
+        <label for="cta">Call to action</label>
+        <input type="text" id="cta" value="Scan to report a problem">
+      </div>
+    </div>
+    <div class="actions">
+      <button id="generate">Generate labels</button>
+      <button id="print" class="secondary">Print</button>
+      <span id="status" class="status"></span>
+    </div>
+  </div>
+
+  <div id="sheet"></div>
+</main>
+
+<script src="qr.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var sheet = $('sheet');
+  var status = $('status');
+
+  function setStatus(message, isError) {
+    status.textContent = message || '';
+    status.className = 'status' + (isError ? ' error' : '');
+  }
+
+  /**
+   * Find the entry.NNNN parameter that carries the vehicle name.
+   * Google's pre-filled links include every answered field, so we take the
+   * last non-empty one and let the caller confirm it.
+   */
+  function parsePrefill(raw) {
+    var url;
+    try {
+      url = new URL(raw.trim());
+    } catch (e) {
+      throw new Error('That does not look like a complete link. It should start with https://');
+    }
+    var found = null;
+    url.searchParams.forEach(function (value, key) {
+      if (/^entry\.\d+$/.test(key) && value.trim() !== '') found = { key: key, value: value };
+    });
+    if (!found) {
+      throw new Error(
+        'No pre-filled answer found in that link. Use "Get pre-filled link" and ' +
+        'choose a vehicle before copying, so the link ends with entry.<number>=<vehicle>.'
+      );
+    }
+    return { url: url, key: found.key, sample: found.value };
+  }
+
+  function linkFor(parsed, vehicleName) {
+    var url = new URL(parsed.url.toString());
+    url.searchParams.set(parsed.key, vehicleName);
+    return url.toString();
+  }
+
+  function showDetected() {
+    var box = $('detected');
+    var raw = $('baseUrl').value.trim();
+    if (!raw) { box.hidden = true; return; }
+    try {
+      var parsed = parsePrefill(raw);
+      box.hidden = false;
+      box.innerHTML = 'Detected vehicle field <code>' + parsed.key + '</code>, currently set to ' +
+        '<code>' + escapeHtml(parsed.sample) + '</code>. Each label will swap in its own name.';
+    } catch (e) {
+      box.hidden = false;
+      box.textContent = e.message;
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch];
+    });
+  }
+
+  function collectLabels() {
+    if ($('mode').value === 'explicit') {
+      return $('pairs').value.split('\n')
+        .map(function (line) { return line.trim(); })
+        .filter(Boolean)
+        .map(function (line, i) {
+          var at = line.indexOf('|');
+          if (at === -1) throw new Error('Line ' + (i + 1) + ' needs a "|" between the name and the link.');
+          var name = line.slice(0, at).trim();
+          var url = line.slice(at + 1).trim();
+          if (!name || !url) throw new Error('Line ' + (i + 1) + ' is missing a name or a link.');
+          return { name: name, url: url };
+        });
+    }
+
+    var parsed = parsePrefill($('baseUrl').value);
+    var names = $('vehicles').value.split('\n')
+      .map(function (v) { return v.trim(); })
+      .filter(Boolean);
+    if (!names.length) throw new Error('Add at least one vehicle.');
+    return names.map(function (name) {
+      return { name: name, url: linkFor(parsed, name) };
+    });
+  }
+
+  function render() {
+    sheet.innerHTML = '';
+    var items;
+    try {
+      items = collectLabels();
+    } catch (e) {
+      setStatus(e.message, true);
+      return;
+    }
+
+    var columns = parseInt($('columns').value, 10);
+    var ecc = $('ecc').value;
+    var cta = $('cta').value.trim();
+    sheet.style.gridTemplateColumns = 'repeat(' + columns + ', 1fr)';
+
+    var biggest = 0;
+    try {
+      items.forEach(function (item) {
+        var qr = window.QR.encode(item.url, ecc);
+        biggest = Math.max(biggest, qr.version);
+
+        var el = document.createElement('div');
+        el.className = 'label';
+        el.innerHTML =
+          '<div class="name">' + escapeHtml(item.name) + '</div>' +
+          window.QR.toSVG(qr, { scale: 4, margin: 2, title: item.name + ' maintenance request' }) +
+          (cta ? '<div class="cta">' + escapeHtml(cta) + '</div>' : '') +
+          '<div class="sub">Point your phone camera at the code</div>';
+        sheet.appendChild(el);
+      });
+    } catch (e) {
+      sheet.innerHTML = '';
+      setStatus(e.message, true);
+      return;
+    }
+
+    setStatus(items.length + ' label' + (items.length === 1 ? '' : 's') +
+      ' ready (QR version ' + biggest + ', level ' + ecc + '). Use Print, or your browser’s ' +
+      'Print to PDF, then stick them on the machines.');
+  }
+
+  $('mode').addEventListener('change', function () {
+    var explicit = this.value === 'explicit';
+    $('prefillFields').hidden = explicit;
+    $('explicitFields').hidden = !explicit;
+  });
+  $('baseUrl').addEventListener('input', showDetected);
+  $('generate').addEventListener('click', render);
+  $('print').addEventListener('click', function () {
+    if (!sheet.children.length) render();
+    if (sheet.children.length) window.print();
+  });
+
+  setStatus('Paste your pre-filled form link above, then choose Generate labels.');
+})();
+</script>
+</body>
+</html>
