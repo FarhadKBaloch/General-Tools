@@ -51,6 +51,10 @@ var CONFIG = {
   // Prefix for generated ticket IDs, e.g. MNT-0007.
   ticketPrefix: 'MNT',
 
+  // Paste your form's share link here and the mobile web app gets a
+  // "New request" button. Leave blank to hide the button.
+  formUrl: '',
+
   // Set false if you would rather not be emailed when a row is closed out.
   notifyOnClose: true
 };
@@ -74,6 +78,8 @@ var STATUS_OPTIONS = ['Open', 'In progress', 'Waiting on parts', 'Done', 'Not ne
 function setUp() {
   var sheet = responseSheet_();
   addTrackingColumns_(sheet);
+  applyReadableFormatting_(sheet);
+  buildMobileTab_(sheet);
   installTriggers_();
   SpreadsheetApp.getActive().toast('Maintenance log is set up and watching for submissions.');
 }
@@ -113,6 +119,175 @@ function addTrackingColumns_(sheet) {
   sheet.getRange(2, statusCol, rows, 1).setDataValidation(rule);
 
   sheet.setFrozenRows(1);
+}
+
+/**
+ * Make the log readable on a phone as far as a spreadsheet allows: narrow the
+ * columns nobody reads, wrap the one that matters, and colour-code status and
+ * urgency so the sheet can be skimmed without reading any text.
+ *
+ * Deliberately does not reorder columns. Google Forms writes responses by
+ * column position, and shuffling them on a linked sheet is a known way to end
+ * up with answers landing in the wrong column.
+ */
+function applyReadableFormatting_(sheet) {
+  var headers = headerRow_(sheet);
+  var lastRow = Math.max(sheet.getMaxRows(), 2);
+  var q = CONFIG.questions;
+
+  // Narrow for the columns you glance at, wide for the description.
+  var widths = {};
+  widths['Timestamp'] = 110;
+  widths['Email Address'] = 120;
+  widths[q.vehicle] = 110;
+  widths[q.priority] = 130;
+  widths[q.problem] = 320;
+  widths[q.reportedBy] = 110;
+  widths[q.leadership] = 130;
+  widths[TICKET_COL] = 80;
+  widths[STATUS_COL] = 110;
+  widths[ASSIGNED_COL] = 150;
+  widths[CLOSED_COL] = 110;
+  widths[NOTES_COL] = 280;
+
+  headers.forEach(function (name, i) {
+    var width = widths[name];
+    if (width) sheet.setColumnWidth(i + 1, width);
+  });
+
+  // Wrap and top-align the long text columns; clip everything else so one long
+  // answer cannot make every row three lines tall.
+  var wrapCols = [q.problem, NOTES_COL];
+  headers.forEach(function (name, i) {
+    var range = sheet.getRange(1, i + 1, lastRow, 1);
+    var wrap = wrapCols.indexOf(name) !== -1;
+    range.setWrapStrategy(wrap ? SpreadsheetApp.WrapStrategy.WRAP : SpreadsheetApp.WrapStrategy.CLIP)
+      .setVerticalAlignment('top');
+  });
+
+  sheet.getRange(1, 1, 1, headers.length)
+    .setFontWeight('bold')
+    .setBackground('#e8efe9');
+  sheet.setFrozenRows(1);
+
+  applyStatusColours_(sheet, headers, lastRow);
+}
+
+/** Colour rules so status and urgency read at a glance. */
+function applyStatusColours_(sheet, headers, lastRow) {
+  var statusIdx = headers.indexOf(STATUS_COL);
+  var priorityIdx = headers.indexOf(CONFIG.questions.priority);
+  if (statusIdx === -1) return;
+
+  var statusRange = sheet.getRange(2, statusIdx + 1, lastRow - 1, 1);
+  var rules = [];
+
+  var byStatus = [
+    ['Open', '#fdecc8', '#7a4f01'],
+    ['In progress', '#d6e4f7', '#1c3d69'],
+    ['Waiting on parts', '#f0e0f5', '#5b2d6e'],
+    ['Done', '#dff0e2', '#1e5128'],
+    ['Not needed', '#eceeed', '#6b7472']
+  ];
+  byStatus.forEach(function (s) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo(s[0])
+      .setBackground(s[1])
+      .setFontColor(s[2])
+      .setRanges([statusRange])
+      .build());
+  });
+
+  // Urgent requests get a red cell in the urgency column, whatever the wording,
+  // so a safety report is visible while scrolling past on a phone.
+  if (priorityIdx !== -1) {
+    var priorityRange = sheet.getRange(2, priorityIdx + 1, lastRow - 1, 1);
+    ['Safety', 'Down'].forEach(function (word) {
+      rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenTextContains(word)
+        .setBackground('#fbe0dd')
+        .setFontColor('#8e2a1c')
+        .setBold(true)
+        .setRanges([priorityRange])
+        .build());
+    });
+  }
+
+  // Replace only our rules; anything the user added by hand on other ranges stays.
+  var managed = [statusIdx + 1];
+  if (priorityIdx !== -1) managed.push(priorityIdx + 1);
+  var kept = sheet.getConditionalFormatRules().filter(function (rule) {
+    return rule.getRanges().every(function (r) {
+      return managed.indexOf(r.getColumn()) === -1;
+    });
+  });
+  sheet.setConditionalFormatRules(kept.concat(rules));
+}
+
+/**
+ * Build the "On my phone" tab: a live, four-column view of open requests only,
+ * newest first. This is the tab to open on a phone — it fits the screen without
+ * sideways scrolling, and it updates itself because it is a formula, not a copy.
+ */
+function buildMobileTab_(sheet) {
+  var ss = SpreadsheetApp.getActive();
+  var name = 'On my phone';
+  var tab = ss.getSheetByName(name);
+  if (!tab) tab = ss.insertSheet(name, 0);
+
+  tab.clear();
+  tab.clearConditionalFormatRules();
+
+  var headers = headerRow_(sheet);
+  var q = CONFIG.questions;
+  var cols = [TICKET_COL, q.vehicle, q.priority, q.problem, STATUS_COL];
+  var letters = cols.map(function (c) {
+    var i = headers.indexOf(c);
+    if (i === -1) throw new Error('Column "' + c + '" is missing from the log. Run setUp again.');
+    return columnLetter_(i + 1);
+  });
+
+  var statusLetter = columnLetter_(headers.indexOf(STATUS_COL) + 1);
+  var quoted = "'" + sheet.getName().replace(/'/g, "''") + "'";
+
+  // Open items only, newest first. Blank status counts as open so a request can
+  // never hide from this view just because the status cell was cleared.
+  var formula = '=IFERROR(QUERY(' + quoted + '!A:' + columnLetter_(headers.length) + ', ' +
+    '"select ' + letters.join(', ') + ' ' +
+    'where ' + statusLetter + " <> 'Done' and " + statusLetter + " <> 'Not needed' " +
+    'order by A desc label ' +
+    letters.map(function (l, i) { return l + " '" + cols[i].replace(/'/g, "''") + "'"; }).join(', ') +
+    '", 1), "Nothing open right now.")';
+
+  tab.getRange('A2').setFormula(formula);
+
+  tab.getRange('A1')
+    .setValue('Open maintenance requests')
+    .setFontSize(14)
+    .setFontWeight('bold');
+
+  var widths = [70, 100, 120, 300, 100];
+  widths.forEach(function (w, i) { tab.setColumnWidth(i + 1, w); });
+  tab.getRange('D:D').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+  tab.getRange('A:E').setVerticalAlignment('top');
+  tab.setFrozenRows(2);
+
+  var note = tab.getRange('G1');
+  note.setValue(
+    'This tab is generated by the script and rebuilds itself when setUp runs. ' +
+    'Edit requests on the responses tab or in the web app, not here.'
+  ).setFontColor('#6b7472').setFontSize(9);
+}
+
+/** 1 -> A, 27 -> AA. */
+function columnLetter_(index) {
+  var letter = '';
+  while (index > 0) {
+    var rem = (index - 1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    index = Math.floor((index - 1) / 26);
+  }
+  return letter;
 }
 
 /** Install the submit and edit triggers, replacing any this script made before. */
@@ -173,7 +348,19 @@ function onMaintenanceEdit(e) {
   var value = String(e.range.getValue()).trim();
   if (value !== 'Done' && value !== 'Not needed') return;
 
-  var row = e.range.getRow();
+  notifyClosed_(sheet, e.range.getRow(), value);
+}
+
+/**
+ * Stamp the close date and tell everyone the request is finished.
+ *
+ * Called from the edit trigger and from the web app. The web app has to call it
+ * explicitly: an installable onEdit trigger does not fire for changes a script
+ * makes, so closing a request in the app would otherwise notify nobody.
+ */
+function notifyClosed_(sheet, row, value) {
+  if (!CONFIG.notifyOnClose) return;
+
   var answers = readAnswers_(null, sheet, row);
   var ticket = readCell_(sheet, row, TICKET_COL) || '(no ticket)';
 
@@ -418,6 +605,112 @@ function formatWhen_(value) {
   var date = value instanceof Date ? value : new Date(value);
   if (isNaN(date.getTime())) return String(value);
   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'EEE d MMM yyyy, h:mm a');
+}
+
+// ===========================================================================
+// Mobile web app
+//
+// Deploy -> New deployment -> Web app. Google hosts it for free. The URL it
+// gives you can be added to a phone's home screen and behaves like an app.
+// ===========================================================================
+
+/** Serves the mobile page. Requires an HTML file named "webapp" in this project. */
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('webapp')
+    .setTitle('Vehicle Maintenance')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * Every request, newest first, as plain objects the page can render as cards.
+ * Reads the sheet in one call — reading cell by cell is the usual reason an
+ * Apps Script web app feels slow.
+ */
+function getRequests() {
+  var sheet = responseSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { requests: [], vehicles: [], statuses: STATUS_OPTIONS };
+
+  var headers = headerRow_(sheet);
+  var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  var q = CONFIG.questions;
+
+  var at = {};
+  headers.forEach(function (h, i) { at[h] = i; });
+  var get = function (rowValues, header) {
+    var i = at[header];
+    return i === undefined ? '' : rowValues[i];
+  };
+
+  var requests = [];
+  var vehicles = {};
+
+  for (var r = values.length - 1; r >= 0; r--) {
+    var v = values[r];
+    var vehicle = String(get(v, q.vehicle) || '').trim();
+    if (vehicle) vehicles[vehicle] = true;
+
+    var timestamp = get(v, 'Timestamp');
+    requests.push({
+      row: r + 2,
+      ticket: String(get(v, TICKET_COL) || ''),
+      vehicle: vehicle,
+      priority: String(get(v, q.priority) || '').trim(),
+      problem: String(get(v, q.problem) || '').trim(),
+      reportedBy: String(get(v, q.reportedBy) || '').trim(),
+      status: String(get(v, STATUS_COL) || 'Open').trim() || 'Open',
+      notes: String(get(v, NOTES_COL) || ''),
+      urgent: isUrgent_(get(v, q.priority)),
+      when: timestamp instanceof Date ? formatWhen_(timestamp) : String(timestamp || '')
+    });
+  }
+
+  return {
+    requests: requests,
+    vehicles: Object.keys(vehicles).sort(),
+    statuses: STATUS_OPTIONS,
+    formUrl: CONFIG.formUrl || ''
+  };
+}
+
+/**
+ * Update one request from the web app.
+ *
+ * The ticket is passed back and re-checked against the row before writing:
+ * someone deleting a row while a phone has the list open would otherwise
+ * shift every row number and write the update onto the wrong request.
+ */
+function updateRequest(payload) {
+  var sheet = responseSheet_();
+  var row = Number(payload && payload.row);
+  if (!row || row < 2 || row > sheet.getLastRow()) {
+    throw new Error('That request no longer exists. Pull down to refresh.');
+  }
+
+  var onSheet = readCell_(sheet, row, TICKET_COL);
+  if (payload.ticket && onSheet && onSheet !== payload.ticket) {
+    throw new Error('The log changed since this list was loaded. Refresh and try again.');
+  }
+
+  var status = String(payload.status || '').trim();
+  if (STATUS_OPTIONS.indexOf(status) === -1) {
+    throw new Error('Unknown status: ' + status);
+  }
+
+  var previous = readCell_(sheet, row, STATUS_COL);
+  if (payload.notes !== undefined) writeCell_(sheet, row, NOTES_COL, String(payload.notes));
+  writeCell_(sheet, row, STATUS_COL, status);
+
+  var closing = (status === 'Done' || status === 'Not needed');
+  var wasClosed = (previous === 'Done' || previous === 'Not needed');
+  if (closing && !wasClosed) {
+    notifyClosed_(sheet, row, status);
+  } else if (!closing) {
+    writeCell_(sheet, row, CLOSED_COL, '');
+  }
+
+  return { ok: true, status: status };
 }
 
 // ===========================================================================

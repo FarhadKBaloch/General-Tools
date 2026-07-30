@@ -84,6 +84,7 @@ Files in this repo that you'll use:
 | `vehicle-qr-labels.html` | Open in a browser. Generates printable QR labels. |
 | `qr.js` | The QR encoder the label page uses. No dependencies. |
 | `maintenance-notify.gs` | Paste into the sheet's Apps Script. Sends the emails. |
+| `maintenance-webapp.html` | Paste in alongside it. The phone-friendly view of the log. |
 | `qr.test.js` | `node qr.test.js` — checks the encoder still works. |
 
 ---
@@ -227,8 +228,10 @@ Safety and down-machine reports arrive with `[URGENT]` in the subject line and
 a red banner.
 
 **Whoever does the work** sets **Status** to `In progress`, then `Done`, and
-writes what they did in **Work done / notes**. Marking it `Done` stamps the
-date and emails the same three people that it's closed.
+writes what they did in **Work done / notes** — either in the sheet or, more
+likely, from their phone in the web app ([Step 6](#step-6--using-the-log-on-a-phone)).
+Marking it `Done` stamps the date and emails the same three people that it's
+closed, whichever way it was closed.
 
 **Once a month**, sort the log by Vehicle. Four repairs on the same hydraulic
 line is a pattern that's invisible when the reports live in text messages,
@@ -242,6 +245,81 @@ A few things worth setting up once you've used it for a season:
 - Add a `Cost` column and you have annual spend per machine.
 - Google Sheets has scheduled emails via Apps Script if you want a Monday
   morning "still open" digest — a natural next addition to the same script.
+
+---
+
+## Step 6 — Using the log on a phone
+
+A spreadsheet is a poor fit for a phone, and no amount of formatting fully
+fixes that: the Google Sheets mobile app shows you roughly three columns at a
+time, editing a cell means pinching and scrolling, and this log is twelve
+columns wide. So there are two answers here, and you'll probably use both.
+
+### The sheet itself, made as readable as a sheet gets
+
+`setUp` now also formats the log for skimming:
+
+- **Sensible column widths** — narrow for the ones you glance at, wide for the
+  problem description, which wraps instead of running off the screen.
+- **Colour-coded Status**, so you can tell open from done without reading.
+- **Red urgency cells** for safety and down-machine reports, visible while
+  scrolling past.
+- **A frozen header row**, so column meanings survive scrolling.
+
+It deliberately does **not** reorder your columns. Google Forms writes
+responses by column position, and shuffling columns on a linked response sheet
+is a well-known way to end up with answers landing in the wrong place.
+
+It also adds a tab called **"On my phone"** — a live, five-column view of open
+requests only, newest first, that fits a phone screen without sideways
+scrolling. It's a formula, not a copy, so it's always current. Open it read-only
+on a phone when you just need to know what's outstanding.
+
+The honest limit: that tab is for *reading*. Updating a request still means the
+full sheet, which is where the web app comes in.
+
+### The web app — the real fix
+
+Apps Script can publish a web page, hosted by Google, for free. That gives you
+an actual mobile app: cards instead of a grid, tap to expand, thumb-sized
+controls, filter chips per vehicle, and a Save button that writes straight back
+to the sheet.
+
+**To deploy it:**
+
+1. In the Apps Script editor: **File → New → HTML file**. Name it exactly
+   `webapp` (Google adds the `.html` itself).
+2. Paste in the entire contents of `maintenance-webapp.html` and save.
+3. Optional: put your form's share link in `CONFIG.formUrl` so the app gets a
+   **New request** button.
+4. **Deploy → New deployment → Web app**.
+   - *Execute as:* **Me**
+   - *Who has access:* **Anyone** if your crew have no Google accounts, or
+     **Anyone within (your organisation)** if they do — the tighter option is
+     better whenever it's workable.
+5. Copy the web app URL. On a phone, open it and use **Add to Home Screen** —
+   it then launches full-screen with its own icon, like any other app.
+
+What you get:
+
+- **Open requests as cards**, urgent ones flagged red and sorted to the top of
+  your attention rather than buried in row 47.
+- **Filter chips** — open only, or one vehicle at a time.
+- **Tap Update** to change status and add notes, then Save. Closing a request
+  from the app emails everyone exactly as closing it in the sheet does.
+- **A running count** of what's open and how much of it is urgent.
+- Dark mode, and no sideways scrolling at any phone size.
+
+One thing worth knowing: *Execute as Me* means the app reads and writes the
+sheet with your permissions, so people using it don't need access to the
+spreadsheet itself — which is usually what you want. The flip side is that
+anyone with the URL can update requests. For an internal maintenance log that's
+the same trust model as the form itself, but it is a deliberate choice rather
+than an accident.
+
+> **If you deploy an updated version later**, use **Deploy → Manage deployments
+> → Edit → Version: New version**. Creating a *new deployment* instead mints a
+> different URL and everyone's home-screen icon keeps pointing at the old one.
 
 ---
 
@@ -281,12 +359,13 @@ Honest limitations:
 
 In rough order of effort, if the simple version stops being enough:
 
-1. **A landing page per vehicle instead of a straight-to-form link.** Host a
-   small static page free on GitHub Pages with two buttons — *Report a problem*
-   and *See this vehicle's history* — and point the QR codes there instead. The
-   label generator supports this: switch **Link source** to "A separate link
-   for each vehicle". This is the direct answer to "I want the scan to take
-   them to the vehicle", and it's maybe two hours of work.
+1. **Point the QR codes at the web app instead of the form.** Now that the web
+   app exists, this is the short path to "scanning takes you to the vehicle":
+   add a `?vehicle=Tractor` parameter to the web app URL, read it in `doGet`,
+   and open the app pre-filtered to that machine with its history and a *Report
+   a problem* button. Switch the label generator's **Link source** to "A
+   separate link for each vehicle" and give each one its own URL. An hour or
+   two, and no new hosting — Google is already serving the page.
 2. **Scheduled service reminders**, by adding an hours/mileage threshold per
    vehicle and a daily Apps Script check.
 3. **A real CMMS** (Fiix, UpKeep, Limble all have free tiers) once you're
@@ -322,3 +401,25 @@ rather than retyping it.
 **`setUp` fails with "Could not find the form responses tab".**
 The form isn't linked to the spreadsheet yet. In the form: Responses → Link to
 Sheets.
+
+**The web app shows "Script function not found: doGet".**
+The HTML file isn't named `webapp`, or `maintenance-notify.gs` wasn't saved
+before deploying. Both files must be in the same Apps Script project.
+
+**The web app loads but shows no requests.**
+Check that the form is linked to the sheet and that at least one response
+exists. If the sheet has rows but the app is empty, the tracking columns are
+missing — run `setUp` again.
+
+**Saving in the web app says "The log changed since this list was loaded".**
+Someone deleted or inserted a row while your phone had the list open, so the
+row numbers shifted. This is the safety check doing its job rather than writing
+your update onto someone else's request — tap ↻ to refresh and redo it.
+
+**Closing a request in the web app didn't email anyone.**
+Check `notifyOnClose` is `true` in `CONFIG`. Note that closing it *twice* only
+notifies once, by design.
+
+**The "On my phone" tab shows a `#REF!` or `#VALUE!` error.**
+It's rebuilt by `setUp`, so run that again — most often this means a column was
+renamed or deleted. Don't edit that tab by hand; it's generated.
