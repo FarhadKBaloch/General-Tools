@@ -1,0 +1,338 @@
+<!--
+  maintenance-webapp.html — the phone-friendly view of the maintenance log.
+
+  Paste this into the same Apps Script project as maintenance-notify.gs, as an
+  HTML file named exactly "webapp" (File -> New -> HTML file -> name it webapp).
+  Then Deploy -> New deployment -> Web app.
+
+  Cards instead of a grid, thumb-sized controls, and no sideways scrolling.
+-->
+<style>
+  :root {
+    --ink: #1c2321;
+    --muted: #6b7472;
+    --line: #dfe5e1;
+    --bg: #f4f6f4;
+    --accent: #2f6f4e;
+    --urgent: #8e2a1c;
+    --urgent-bg: #fbe0dd;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  header {
+    position: sticky; top: 0; z-index: 5;
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+    padding: 12px 16px 0;
+  }
+  .titlebar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  h1 { margin: 0; font-size: 17px; }
+  .counts { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .counts .flag { color: var(--urgent); font-weight: 700; }
+
+  /* Horizontally scrolling filter chips — the one place sideways movement helps. */
+  .filters {
+    display: flex; gap: 8px;
+    overflow-x: auto;
+    padding: 10px 0;
+    margin: 0 -16px;
+    padding-left: 16px; padding-right: 16px;
+    scrollbar-width: none;
+  }
+  .filters::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center;
+    min-height: 44px;              /* thumb-sized, per Apple's touch guidance */
+    font: inherit; font-size: 14px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+  main { padding: 14px 16px 90px; }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .card.is-urgent { border-left-color: var(--urgent); }
+  .card.is-done { opacity: .62; }
+
+  .card .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .card .equipment { font-weight: 700; font-size: 17px; }
+  .card .ticket { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .badge {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .badge.urgent { background: var(--urgent-bg); color: var(--urgent); }
+  .badge.status { background: #eef1ef; color: var(--muted); }
+  .badge.status[data-status="Open"] { background: #fdecc8; color: #7a4f01; }
+  .badge.status[data-status="In progress"] { background: #d6e4f7; color: #1c3d69; }
+  .badge.status[data-status="Waiting on parts"] { background: #f0e0f5; color: #5b2d6e; }
+  .badge.status[data-status="Done"] { background: #dff0e2; color: #1e5128; }
+
+  .card .problem { margin: 9px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .card .meta { margin-top: 8px; font-size: 13px; color: var(--muted); }
+
+  .card details { margin-top: 12px; }
+  .card summary {
+    cursor: pointer; font-size: 15px; font-weight: 600; color: var(--accent);
+    display: flex; align-items: center; min-height: 44px;
+    list-style: none;
+  }
+  .card summary::-webkit-details-marker { display: none; }
+  .card summary::after { content: " ›"; }
+  .card details[open] summary::after { content: " ⌄"; }
+
+  label.field { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 5px; }
+  select, textarea {
+    width: 100%; font: inherit; font-size: 16px; /* 16px stops iOS zooming on focus */
+    padding: 11px; border: 1px solid var(--line); border-radius: 8px;
+    background: #fff; color: inherit;
+  }
+  textarea { min-height: 76px; resize: vertical; }
+
+  button.save {
+    margin-top: 12px; width: 100%;
+    font: inherit; font-weight: 700; font-size: 16px;
+    padding: 13px; border-radius: 8px; border: none;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button.save:disabled { opacity: .5; }
+
+  .rowmsg { font-size: 13px; margin-top: 8px; min-height: 18px; }
+  .rowmsg.ok { color: var(--accent); }
+  .rowmsg.err { color: var(--urgent); font-weight: 600; }
+
+  .empty, .loading { text-align: center; color: var(--muted); padding: 44px 20px; }
+  .trimmed { text-align: center; color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+
+  .fab {
+    position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
+    display: flex; gap: 10px;
+  }
+  .fab a, .fab button {
+    flex: 1; text-align: center; text-decoration: none;
+    font: inherit; font-weight: 700; font-size: 15px;
+    padding: 14px; border-radius: 10px; border: 1px solid var(--accent);
+    background: var(--accent); color: #fff; cursor: pointer;
+    box-shadow: 0 3px 10px rgba(0,0,0,.16);
+  }
+  .fab button.ghost { background: #fff; color: var(--accent); flex: 0 0 auto; padding: 14px 18px; }
+
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #e8ebe9; --muted: #9aa5a1; --line: #333b38; --bg: #141817; --urgent-bg: #4a201a; --urgent: #f0a396; }
+    header, .card, select, textarea, .chip, .fab button.ghost { background: #1e2422; }
+    .badge.status { background: #2a3230; }
+  }
+</style>
+
+<header>
+  <div class="titlebar">
+    <h1>Equipment Maintenance</h1>
+    <div class="counts" id="counts"></div>
+  </div>
+  <div class="filters" id="filters"></div>
+</header>
+
+<main id="list"><div class="loading">Loading requests…</div></main>
+
+<div class="fab">
+  <a id="newRequest" href="#" hidden>New request</a>
+  <button class="ghost" id="refresh" type="button" aria-label="Refresh">↻</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var state = { data: null, equipment: 'All', onlyOpen: true };
+  var listEl = document.getElementById('list');
+  var CLOSED = ['Done', 'Not needed'];
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function isClosed(r) { return CLOSED.indexOf(r.status) !== -1; }
+
+  function load() {
+    listEl.innerHTML = '<div class="loading">Loading requests…</div>';
+    google.script.run
+      .withSuccessHandler(function (data) { state.data = data; showFormLink(data.formUrl); render(); })
+      .withFailureHandler(function (err) {
+        listEl.innerHTML = '<div class="empty">Could not load the log.<br>' +
+          esc(err && err.message ? err.message : err) + '</div>';
+      })
+      .getRequests();
+  }
+
+  function visible() {
+    var all = state.data.requests;
+    return all.filter(function (r) {
+      if (state.equipment !== 'All' && r.equipment !== state.equipment) return false;
+      if (state.onlyOpen && isClosed(r)) return false;
+      return true;
+    });
+  }
+
+  function renderFilters() {
+    var wrap = document.getElementById('filters');
+    var chips = [
+      { key: 'open', label: state.onlyOpen ? 'Open only' : 'All statuses', toggle: true }
+    ];
+    ['All'].concat(state.data.equipmentList).forEach(function (v) {
+      chips.push({ key: 'v:' + v, label: v, pressed: state.equipment === v });
+    });
+
+    wrap.innerHTML = chips.map(function (c) {
+      return '<button class="chip" type="button" data-key="' + esc(c.key) + '" aria-pressed="' +
+        (c.toggle ? state.onlyOpen : !!c.pressed) + '">' + esc(c.label) + '</button>';
+    }).join('');
+
+    wrap.querySelectorAll('.chip').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var key = btn.dataset.key;
+        if (key === 'open') state.onlyOpen = !state.onlyOpen;
+        else state.equipment = key.slice(2);
+        render();
+      });
+    });
+  }
+
+  function renderCounts() {
+    var open = state.data.requests.filter(function (r) { return !isClosed(r); });
+    var urgent = open.filter(function (r) { return r.urgent; }).length;
+    document.getElementById('counts').innerHTML =
+      open.length + ' open' + (urgent ? ' · <span class="flag">' + urgent + ' urgent</span>' : '');
+  }
+
+  function cardHtml(r) {
+    var statuses = state.data.statuses.map(function (s) {
+      return '<option value="' + esc(s) + '"' + (s === r.status ? ' selected' : '') + '>' + esc(s) + '</option>';
+    }).join('');
+
+    return '<article class="card' + (r.urgent && !isClosed(r) ? ' is-urgent' : '') +
+      (isClosed(r) ? ' is-done' : '') + '" data-row="' + r.row + '">' +
+        '<div class="top">' +
+          '<div>' +
+            '<div class="equipment">' + esc(r.label || r.equipment || 'Equipment not given') + '</div>' +
+            '<div class="ticket">' + esc(r.ticket || '—') + ' · ' + esc(r.when) + '</div>' +
+          '</div>' +
+          '<div>' +
+            (r.urgent && !isClosed(r) ? '<span class="badge urgent">Urgent</span> ' : '') +
+            '<span class="badge status" data-status="' + esc(r.status) + '">' + esc(r.status) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<p class="problem">' + esc(r.problem || '(no description)') + '</p>' +
+        '<div class="meta">' + esc(r.priority || '') +
+          (r.reportedBy ? ' · reported by ' + esc(r.reportedBy) : '') + '</div>' +
+        '<details>' +
+          '<summary>Update</summary>' +
+          '<label class="field" for="s' + r.row + '">Status</label>' +
+          '<select id="s' + r.row + '" class="status-select">' + statuses + '</select>' +
+          '<label class="field" for="n' + r.row + '">Work done / notes</label>' +
+          '<textarea id="n' + r.row + '" class="notes" placeholder="What was done, parts used, who did it">' +
+            esc(r.notes) + '</textarea>' +
+          '<button class="save" type="button">Save</button>' +
+          '<div class="rowmsg" role="status"></div>' +
+        '</details>' +
+      '</article>';
+  }
+
+  function render() {
+    renderFilters();
+    renderCounts();
+
+    var items = visible();
+    if (!items.length) {
+      listEl.innerHTML = '<div class="empty">' +
+        (state.onlyOpen ? 'Nothing open' : 'Nothing logged') +
+        (state.equipment === 'All' ? '.' : ' for the ' + esc(state.equipment) + '.') +
+        '</div>';
+      return;
+    }
+    listEl.innerHTML = items.map(cardHtml).join('') +
+      (!state.onlyOpen && state.data.closedHidden
+        ? '<p class="trimmed">' + state.data.closedHidden +
+          ' older closed request' + (state.data.closedHidden === 1 ? '' : 's') +
+          ' not shown. The full history is in the sheet.</p>'
+        : '');
+    listEl.querySelectorAll('.save').forEach(function (btn) {
+      btn.addEventListener('click', function () { save(btn); });
+    });
+  }
+
+  function save(btn) {
+    var card = btn.closest('.card');
+    var row = Number(card.dataset.row);
+    var record = state.data.requests.filter(function (r) { return r.row === row; })[0];
+    var msg = card.querySelector('.rowmsg');
+    var status = card.querySelector('.status-select').value;
+    var notes = card.querySelector('.notes').value;
+
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    msg.className = 'rowmsg';
+    msg.textContent = '';
+
+    google.script.run
+      .withSuccessHandler(function () {
+        // Update in place so the list does not jump under the user's thumb.
+        record.status = status;
+        record.notes = notes;
+        btn.disabled = false;
+        btn.textContent = 'Save';
+        msg.className = 'rowmsg ok';
+        msg.textContent = 'Saved.';
+        var closed = CLOSED.indexOf(status) !== -1;
+        card.querySelector('.badge.status').textContent = status;
+        card.querySelector('.badge.status').dataset.status = status;
+        card.classList.toggle('is-done', closed);
+        card.classList.toggle('is-urgent', record.urgent && !closed);
+        // A closed request is no longer urgent, whatever it was reported as.
+        var urgentBadge = card.querySelector('.badge.urgent');
+        if (urgentBadge) urgentBadge.hidden = closed;
+        renderCounts();
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false;
+        btn.textContent = 'Save';
+        msg.className = 'rowmsg err';
+        msg.textContent = (err && err.message) ? err.message : 'Could not save. Try again.';
+      })
+      .updateRequest({ row: row, ticket: record.ticket, status: status, notes: notes });
+  }
+
+  function showFormLink(url) {
+    if (!url) return;
+    var link = document.getElementById('newRequest');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.hidden = false;
+  }
+
+  document.getElementById('refresh').addEventListener('click', load);
+  load();
+})();
+</script>
