@@ -224,16 +224,29 @@ function applyStatusColours_(sheet, headers, lastRow) {
   sheet.setConditionalFormatRules(kept.concat(rules));
 }
 
+var MOBILE_TAB = 'On my phone';
+var MOBILE_TAB_TITLE = 'Open maintenance requests';
+
 /**
- * Build the "On my phone" tab: a live, four-column view of open requests only,
+ * Build the "On my phone" tab: a live, five-column view of open requests only,
  * newest first. This is the tab to open on a phone — it fits the screen without
  * sideways scrolling, and it updates itself because it is a formula, not a copy.
+ *
+ * Rebuilt from scratch every time setUp runs, so it refuses to touch a tab of
+ * the same name that it did not generate rather than clearing someone's work.
  */
 function buildMobileTab_(sheet) {
   var ss = SpreadsheetApp.getActive();
-  var name = 'On my phone';
-  var tab = ss.getSheetByName(name);
-  if (!tab) tab = ss.insertSheet(name, 0);
+  var tab = ss.getSheetByName(MOBILE_TAB);
+
+  if (!tab) {
+    tab = ss.insertSheet(MOBILE_TAB, 0);
+  } else if (tab.getLastRow() > 0 && tab.getRange('A1').getValue() !== MOBILE_TAB_TITLE) {
+    throw new Error(
+      'A tab called "' + MOBILE_TAB + '" already exists and was not created by this ' +
+      'script, so it has been left alone. Rename it and run setUp again.'
+    );
+  }
 
   tab.clear();
   tab.clearConditionalFormatRules();
@@ -262,7 +275,7 @@ function buildMobileTab_(sheet) {
   tab.getRange('A2').setFormula(formula);
 
   tab.getRange('A1')
-    .setValue('Open maintenance requests')
+    .setValue(MOBILE_TAB_TITLE)
     .setFontSize(14)
     .setFontWeight('bold');
 

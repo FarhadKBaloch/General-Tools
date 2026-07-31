@@ -323,6 +323,72 @@ than an accident.
 
 ---
 
+## Upgrading an install that's already running
+
+If you already have the form, sheet and script live, you are not rebuilding
+anything. Your data, ticket numbers and QR stickers all stay as they are.
+
+**Nothing to redo:** the form is unchanged, so **the printed QR codes still
+work** — don't reprint them. Existing rows keep their ticket IDs, statuses,
+notes and close dates. `setUp` skips columns that already exist and replaces
+its own triggers rather than adding a second copy, so it's safe to re-run.
+
+### The steps
+
+1. **Make a backup first.** In the spreadsheet: **File → Make a copy**, name it
+   something like `Maintenance Log — backup before upgrade`. Takes five seconds
+   and means any surprise is a one-click undo.
+
+2. **Save your CONFIG before you overwrite it.** Open **Extensions → Apps
+   Script**, select the whole `CONFIG = { … }` block — from `var CONFIG = {`
+   down to the closing `};` — and paste it somewhere safe. This is the only
+   part of the script that holds your real email addresses, and step 3 wipes
+   it.
+
+3. **Replace the script.** Click into the code, select all (`Ctrl/Cmd + A`),
+   and paste in the whole of the new `maintenance-notify.gs`.
+
+4. **Paste your CONFIG back** over the new placeholder one. Your old block is
+   missing the new `formUrl` setting, and that's fine — it's optional and
+   defaults to empty. Add it if you want the app's **New request** button:
+
+   ```js
+   formUrl: 'https://forms.gle/your-form-link',
+   ```
+
+5. **Add the web app page.** **File → New → HTML file**, named exactly
+   `webapp`, and paste in `maintenance-webapp.html`. Save.
+
+6. **Run `setUp`.** Pick it from the function dropdown and press Run. Google may
+   ask you to re-authorise — that's expected, the script gained new abilities.
+   This adds the formatting, builds the "On my phone" tab, and reinstalls the
+   triggers.
+
+7. **Deploy the web app**, per [Step 6](#step-6--using-the-log-on-a-phone).
+
+8. **Check it worked:** the log should now be colour-coded, an "On my phone"
+   tab should exist listing only open requests, and **Maintenance → Send test
+   email** should still arrive.
+
+### What does get overwritten
+
+Two things, both cosmetic, both only if you customised them:
+
+- **Column widths** you set by hand are replaced with the script's.
+- **Conditional formatting rules on the Status and urgency columns** are
+  replaced. Rules you added on *other* columns are left alone.
+
+And one thing that will stop you rather than break anything: if you happen to
+already have a tab named **"On my phone"**, `setUp` refuses to touch it and
+tells you to rename it first, rather than clearing whatever is in it.
+
+> **Going back**, if you ever want to: paste the old script over the new one and
+> run `setUp`. The extra columns and the mobile tab are additive — nothing in
+> the new version changes how a response is recorded, so old and new script
+> versions read the same sheet identically.
+
+---
+
 ## What this costs and where the limits are
 
 Nothing, and the ceilings are far above what you'll use:
