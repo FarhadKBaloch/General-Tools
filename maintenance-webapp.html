@@ -75,7 +75,7 @@
   .card.is-done { opacity: .62; }
 
   .card .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
-  .card .vehicle { font-weight: 700; font-size: 17px; }
+  .card .equipment { font-weight: 700; font-size: 17px; }
   .card .ticket { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .badge {
     font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
@@ -145,7 +145,7 @@
 
 <header>
   <div class="titlebar">
-    <h1>Vehicle Maintenance</h1>
+    <h1>Equipment Maintenance</h1>
     <div class="counts" id="counts"></div>
   </div>
   <div class="filters" id="filters"></div>
@@ -162,7 +162,7 @@
 (function () {
   'use strict';
 
-  var state = { data: null, vehicle: 'All', onlyOpen: true };
+  var state = { data: null, equipment: 'All', onlyOpen: true };
   var listEl = document.getElementById('list');
   var CLOSED = ['Done', 'Not needed'];
 
@@ -188,7 +188,7 @@
   function visible() {
     var all = state.data.requests;
     return all.filter(function (r) {
-      if (state.vehicle !== 'All' && r.vehicle !== state.vehicle) return false;
+      if (state.equipment !== 'All' && r.equipment !== state.equipment) return false;
       if (state.onlyOpen && isClosed(r)) return false;
       return true;
     });
@@ -199,8 +199,8 @@
     var chips = [
       { key: 'open', label: state.onlyOpen ? 'Open only' : 'All statuses', toggle: true }
     ];
-    ['All'].concat(state.data.vehicles).forEach(function (v) {
-      chips.push({ key: 'v:' + v, label: v, pressed: state.vehicle === v });
+    ['All'].concat(state.data.equipmentList).forEach(function (v) {
+      chips.push({ key: 'v:' + v, label: v, pressed: state.equipment === v });
     });
 
     wrap.innerHTML = chips.map(function (c) {
@@ -212,7 +212,7 @@
       btn.addEventListener('click', function () {
         var key = btn.dataset.key;
         if (key === 'open') state.onlyOpen = !state.onlyOpen;
-        else state.vehicle = key.slice(2);
+        else state.equipment = key.slice(2);
         render();
       });
     });
@@ -234,7 +234,7 @@
       (isClosed(r) ? ' is-done' : '') + '" data-row="' + r.row + '">' +
         '<div class="top">' +
           '<div>' +
-            '<div class="vehicle">' + esc(r.vehicle || 'Vehicle not given') + '</div>' +
+            '<div class="equipment">' + esc(r.label || r.equipment || 'Equipment not given') + '</div>' +
             '<div class="ticket">' + esc(r.ticket || '—') + ' · ' + esc(r.when) + '</div>' +
           '</div>' +
           '<div>' +
@@ -266,7 +266,7 @@
     if (!items.length) {
       listEl.innerHTML = '<div class="empty">' +
         (state.onlyOpen ? 'Nothing open' : 'Nothing logged') +
-        (state.vehicle === 'All' ? '.' : ' for the ' + esc(state.vehicle) + '.') +
+        (state.equipment === 'All' ? '.' : ' for the ' + esc(state.equipment) + '.') +
         '</div>';
       return;
     }

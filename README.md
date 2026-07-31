@@ -1,8 +1,8 @@
-> **Also in this repository:** [Vehicle maintenance log](VEHICLE-MAINTENANCE.md) —
-> QR codes on the tractor, gator, truck and sprayer that open a pre-filled
-> maintenance request and notify the right people. No server, no cost.
+> **Also in this repository:** [Equipment maintenance log](EQUIPMENT-MAINTENANCE.md) —
+> QR codes on the tractor, gator, truck, sprayer and everything else that open a
+> pre-filled maintenance request and notify the right people. No server, no cost.
 > Includes a phone-friendly web app for updating requests in the field.
-> (`vehicle-qr-labels.html`, `maintenance-notify.gs`, `maintenance-webapp.html`, `qr.js`)
+> (`equipment-qr-labels.html`, `maintenance-notify.gs`, `maintenance-webapp.html`, `qr.js`)
 
 ---
 

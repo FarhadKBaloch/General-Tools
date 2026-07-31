@@ -1,5 +1,5 @@
 /**
- * maintenance-notify.gs — Google Apps Script for the vehicle maintenance log.
+ * maintenance-notify.gs — Google Apps Script for the equipment maintenance log.
  *
  * Paste this into the response spreadsheet (Extensions -> Apps Script), edit
  * CONFIG below, then run setUp() once. After that, every form submission:
@@ -36,13 +36,25 @@ var CONFIG = {
 
   // Form question titles. Change these only if you word your questions
   // differently; matching is case-insensitive and ignores trailing punctuation.
+  //
+  // A list means "any of these" — the first is what a new form should use, and
+  // the rest are older wordings that still match. That is why 'Vehicle' is
+  // still listed: a log that started out tracking only vehicles keeps working
+  // without anyone having to rename a column of historical data.
   questions: {
-    vehicle: 'Vehicle',
+    equipment: ['Equipment', 'Vehicle'],
+    item: 'Which item, and where is it?',
     leadership: 'Leadership Team contact',
     priority: 'How urgent is it?',
     problem: 'What needs attention?',
     reportedBy: 'Your name'
   },
+
+  // The catch-all bucket, for step stools, ladders, pallet jacks, hand tools
+  // and anything else that breaks too rarely to deserve its own QR code.
+  // One QR code covers all of it; the "Which item" answer says what broke.
+  // Must match the form's answer option exactly.
+  generalEquipment: 'General equipment',
 
   // Priority answers that should mark the email as high importance and put a
   // flag in the subject line. Match your form's wording.
@@ -139,7 +151,8 @@ function applyReadableFormatting_(sheet) {
   var widths = {};
   widths['Timestamp'] = 110;
   widths['Email Address'] = 120;
-  widths[q.vehicle] = 110;
+  widths[headerFor_(headers, q.equipment)] = 110;
+  widths[headerFor_(headers, q.item)] = 180;
   widths[q.priority] = 130;
   widths[q.problem] = 320;
   widths[q.reportedBy] = 110;
@@ -253,11 +266,29 @@ function buildMobileTab_(sheet) {
 
   var headers = headerRow_(sheet);
   var q = CONFIG.questions;
-  var cols = [TICKET_COL, q.vehicle, q.priority, q.problem, STATUS_COL];
-  var letters = cols.map(function (c) {
-    var i = headers.indexOf(c);
-    if (i === -1) throw new Error('Column "' + c + '" is missing from the log. Run setUp again.');
-    return columnLetter_(i + 1);
+
+  // The item column is optional: a log set up before the catch-all bucket
+  // existed simply will not have it, and that should not break this tab.
+  var wanted = [
+    { title: TICKET_COL, required: true },
+    { title: headerFor_(headers, q.equipment), required: true },
+    { title: headerFor_(headers, q.item), required: false },
+    { title: q.problem, required: true },
+    { title: STATUS_COL, required: true }
+  ];
+
+  var cols = [];
+  var letters = [];
+  wanted.forEach(function (w) {
+    var i = headers.indexOf(w.title);
+    if (i === -1) {
+      if (w.required) {
+        throw new Error('Column "' + w.title + '" is missing from the log. Run setUp again.');
+      }
+      return;
+    }
+    cols.push(w.title);
+    letters.push(columnLetter_(i + 1));
   });
 
   var statusLetter = columnLetter_(headers.indexOf(STATUS_COL) + 1);
@@ -335,7 +366,7 @@ function onMaintenanceSubmit(e) {
 
   var urgent = isUrgent_(answers.priority);
   var subject = (urgent ? '[URGENT] ' : '') + ticket + ': ' +
-    (answers.vehicle || 'Vehicle') + ' needs maintenance';
+    describe_(answers) + ' needs maintenance';
 
   var link = rowUrl_(sheet, row);
   MailApp.sendEmail({
@@ -344,7 +375,7 @@ function onMaintenanceSubmit(e) {
     subject: subject,
     body: plainBody_(ticket, answers, link),
     htmlBody: htmlBody_(ticket, answers, link, urgent),
-    name: 'Vehicle Maintenance Log'
+    name: 'Equipment Maintenance Log'
   });
 }
 
@@ -384,18 +415,18 @@ function notifyClosed_(sheet, row, value) {
 
   MailApp.sendEmail({
     to: recipientsFor_(answers.leadership).join(','),
-    subject: ticket + ' closed (' + value + '): ' + (answers.vehicle || 'Vehicle'),
+    subject: ticket + ' closed (' + value + '): ' + describe_(answers),
     body: [
       ticket + ' has been marked "' + value + '".',
       '',
-      'Vehicle:   ' + (answers.vehicle || '-'),
+      'Equipment:   ' + describe_(answers),
       'Problem:   ' + (answers.problem || '-'),
       'Notes:     ' + (notes || '(none recorded)'),
       'Closed by: ' + (closedBy || 'unknown'),
       '',
       rowUrl_(sheet, row)
     ].join('\n'),
-    name: 'Vehicle Maintenance Log'
+    name: 'Equipment Maintenance Log'
   });
 }
 
@@ -411,7 +442,8 @@ function readAnswers_(e, sheet, row) {
   var named = e && e.namedValues ? e.namedValues : rowAsNamedValues_(sheet, row);
   var q = CONFIG.questions;
   return {
-    vehicle: lookup_(named, q.vehicle),
+    equipment: lookup_(named, q.equipment),
+    item: lookup_(named, q.item),
     leadership: lookup_(named, q.leadership),
     priority: lookup_(named, q.priority),
     problem: lookup_(named, q.problem),
@@ -430,18 +462,65 @@ function rowAsNamedValues_(sheet, row) {
   return out;
 }
 
-/** Header matching that tolerates case and trailing punctuation differences. */
+/**
+ * Header matching that tolerates case and trailing punctuation differences.
+ * `title` may be a list of acceptable wordings, tried in order.
+ */
 function lookup_(named, title) {
   if (!title) return '';
-  var want = normalise_(title);
+  var wanted = titleList_(title);
   var keys = Object.keys(named);
-  for (var i = 0; i < keys.length; i++) {
-    if (normalise_(keys[i]) === want) {
-      var v = named[keys[i]];
-      return String(Array.isArray(v) ? v.join(', ') : v).trim();
+
+  for (var w = 0; w < wanted.length; w++) {
+    var want = normalise_(wanted[w]);
+    for (var i = 0; i < keys.length; i++) {
+      if (normalise_(keys[i]) === want) {
+        var v = named[keys[i]];
+        return String(Array.isArray(v) ? v.join(', ') : v).trim();
+      }
     }
   }
   return '';
+}
+
+function titleList_(title) {
+  return Array.isArray(title) ? title : [title];
+}
+
+/**
+ * The column header actually present in the sheet for a question, given that
+ * the question may have several accepted wordings. Falls back to the preferred
+ * wording so callers always get a usable string.
+ */
+function headerFor_(headers, title) {
+  var wanted = titleList_(title);
+  for (var w = 0; w < wanted.length; w++) {
+    for (var i = 0; i < headers.length; i++) {
+      if (normalise_(headers[i]) === normalise_(wanted[w])) return headers[i];
+    }
+  }
+  return wanted[0];
+}
+
+/**
+ * What to call this request in an email subject or on a card.
+ *
+ * A request against the catch-all bucket says only "General equipment", which
+ * tells the Facilities Lead nothing — a cracked ladder rung and a pallet jack
+ * that will not lift are not the same job. So for that bucket the item answer
+ * becomes the headline, and its absence is stated rather than left blank.
+ */
+function describe_(answers) {
+  var equipment = String(answers.equipment || '').trim();
+  var item = String(answers.item || '').trim();
+
+  if (!isGeneral_(equipment)) return equipment || 'Equipment';
+  if (item) return item + ' (' + equipment + ')';
+  return equipment + ' — item not specified';
+}
+
+function isGeneral_(equipment) {
+  return normalise_(equipment) === normalise_(CONFIG.generalEquipment);
 }
 
 function normalise_(s) {
@@ -451,7 +530,10 @@ function normalise_(s) {
 /** Any answers that are not one of the known questions, so nothing is lost. */
 function extraAnswers_(named) {
   var known = [];
-  Object.keys(CONFIG.questions).forEach(function (k) { known.push(normalise_(CONFIG.questions[k])); });
+  Object.keys(CONFIG.questions).forEach(function (k) {
+    // A question may have several accepted wordings; all of them count as known.
+    titleList_(CONFIG.questions[k]).forEach(function (title) { known.push(normalise_(title)); });
+  });
   known.push('timestamp', 'email address');
   [TICKET_COL, STATUS_COL, ASSIGNED_COL, CLOSED_COL, NOTES_COL].forEach(function (c) {
     known.push(normalise_(c));
@@ -546,7 +628,8 @@ function plainBody_(ticket, a, link) {
   var lines = [
     ticket + ' - maintenance request',
     '',
-    'Vehicle:     ' + (a.vehicle || '-'),
+    'Equipment:     ' + (a.equipment || '-'),
+    'Item:          ' + (a.item || (isGeneral_(a.equipment) ? 'NOT SPECIFIED' : '-')),
     'Urgency:     ' + (a.priority || '-'),
     'Reported by: ' + (a.reportedBy || a.email || 'not given'),
     'Filed:       ' + formatWhen_(a.timestamp),
@@ -570,7 +653,8 @@ function htmlBody_(ticket, a, link, urgent) {
   };
 
   var rows = [
-    ['Vehicle', a.vehicle],
+    ['Equipment', a.equipment],
+    ['Item', a.item || (isGeneral_(a.equipment) ? 'Not specified' : '')],
     ['Urgency', a.priority],
     ['Reported by', a.reportedBy || a.email || 'not given'],
     ['Filed', formatWhen_(a.timestamp)]
@@ -594,7 +678,7 @@ function htmlBody_(ticket, a, link, urgent) {
           'until it is looked at.</p>'
         : '') +
       '<h2 style="margin:0 0 4px;font-size:18px">' + esc(ticket) + ' — ' +
-        esc(a.vehicle || 'Vehicle') + '</h2>' +
+        esc(describe_(a)) + '</h2>' +
       '<p style="margin:0 0 18px;color:#5f6b66;font-size:14px">A new maintenance request was ' +
         'filed from the QR code on the machine.</p>' +
       '<table style="border-collapse:collapse;font-size:14px;margin-bottom:18px">' +
@@ -630,7 +714,7 @@ function formatWhen_(value) {
 /** Serves the mobile page. Requires an HTML file named "webapp" in this project. */
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('webapp')
-    .setTitle('Vehicle Maintenance')
+    .setTitle('Equipment Maintenance')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -643,7 +727,9 @@ function doGet() {
 function getRequests() {
   var sheet = responseSheet_();
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { requests: [], vehicles: [], statuses: STATUS_OPTIONS };
+  if (lastRow < 2) {
+    return { requests: [], equipmentList: [], statuses: STATUS_OPTIONS, formUrl: CONFIG.formUrl || '' };
+  }
 
   var headers = headerRow_(sheet);
   var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
@@ -657,18 +743,24 @@ function getRequests() {
   };
 
   var requests = [];
-  var vehicles = {};
+  var equipmentList = {};
 
   for (var r = values.length - 1; r >= 0; r--) {
     var v = values[r];
-    var vehicle = String(get(v, q.vehicle) || '').trim();
-    if (vehicle) vehicles[vehicle] = true;
+    var equipment = String(get(v, headerFor_(headers, q.equipment)) || '').trim();
+    if (equipment) equipmentList[equipment] = true;
 
     var timestamp = get(v, 'Timestamp');
+    var item = String(get(v, headerFor_(headers, q.item)) || '').trim();
     requests.push({
       row: r + 2,
       ticket: String(get(v, TICKET_COL) || ''),
-      vehicle: vehicle,
+      equipment: equipment,
+      item: item,
+      // What the card shows as its heading: for the catch-all bucket that is
+      // the item, not the useless word "General equipment".
+      label: describe_({ equipment: equipment, item: item }),
+      general: isGeneral_(equipment),
       priority: String(get(v, q.priority) || '').trim(),
       problem: String(get(v, q.problem) || '').trim(),
       reportedBy: String(get(v, q.reportedBy) || '').trim(),
@@ -681,7 +773,7 @@ function getRequests() {
 
   return {
     requests: requests,
-    vehicles: Object.keys(vehicles).sort(),
+    equipmentList: Object.keys(equipmentList).sort(),
     statuses: STATUS_OPTIONS,
     formUrl: CONFIG.formUrl || ''
   };
@@ -735,12 +827,12 @@ function sendTestEmail() {
   var recipients = recipientsFor_('');
   MailApp.sendEmail({
     to: recipients.join(','),
-    subject: '[test] Vehicle maintenance log is connected',
+    subject: '[test] Equipment maintenance log is connected',
     body: 'If you are reading this, notifications are working.\n\n' +
       'Recipients on this test: ' + recipients.join(', ') + '\n\n' +
       'Note that a real request also emails the Leadership Team member the ' +
       'person picks on the form.',
-    name: 'Vehicle Maintenance Log'
+    name: 'Equipment Maintenance Log'
   });
   SpreadsheetApp.getActive().toast('Test email sent to: ' + recipients.join(', '));
 }
