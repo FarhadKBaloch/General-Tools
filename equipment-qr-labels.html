@@ -95,26 +95,12 @@
   }
   .label .name {
     font-weight: 800;
-    font-size: 20px;
+    font-size: 22px;
     line-height: 1.2;
-    margin-bottom: 4px;
+    margin-bottom: 12px;
     word-break: break-word;
   }
-  .label .note {
-    font-size: 12px;
-    line-height: 1.3;
-    color: #3c453f;
-    max-width: 22em;
-  }
-  .label svg { width: 100%; height: auto; max-width: 260px; display: block; margin-top: 6px; }
-  .label .cta {
-    margin-top: 10px;
-    font-size: 14px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .04em;
-  }
-  .label .sub { font-size: 11px; color: #4a544f; margin-top: 3px; }
+  .label svg { width: 100%; height: auto; max-width: 260px; display: block; }
 
   @media print {
     header, .panel, .noprint { display: none !important; }
@@ -153,17 +139,14 @@
 
       <label for="equipments">
         Equipment
-        <span class="hint">
-          One per line, matching the form's answer options exactly. Add
-          <code>| a note</code> after a name to print a line of smaller text under it &mdash;
-          useful for the general-equipment label.
-        </span>
+        <span class="hint">One per line, matching the form's answer options exactly.
+        The name is the only thing printed on the label.</span>
       </label>
       <textarea id="equipments" spellcheck="false">Tractor
 Gator
 Truck
 Sprayer
-General equipment | Ladders, stools, pallet jacks &mdash; anything else</textarea>
+General equipment</textarea>
     </div>
 
     <div id="explicitFields" hidden>
@@ -194,10 +177,6 @@ Gator | https://example.com/gator</textarea>
           <option value="Q" selected>Q &mdash; 25% (recommended outdoors)</option>
           <option value="H">H &mdash; 30%, densest code</option>
         </select>
-      </div>
-      <div>
-        <label for="cta">Call to action</label>
-        <input type="text" id="cta" value="Scan to report a problem">
       </div>
     </div>
     <div class="actions">
@@ -289,7 +268,7 @@ Gator | https://example.com/gator</textarea>
           if (!parts[0] || !parts[1]) {
             throw new Error('Line ' + (i + 1) + ' is missing a name or a link.');
           }
-          return { name: parts[0], url: parts[1], note: parts[2] || '' };
+          return { name: parts[0], url: parts[1] };
         });
     }
 
@@ -299,14 +278,8 @@ Gator | https://example.com/gator</textarea>
       .filter(Boolean);
     if (!lines.length) throw new Error('Add at least one piece of equipment.');
 
-    return lines.map(function (line) {
-      // Anything after a "|" is a note printed under the name; the QR still
-      // encodes only the name, which is what the form expects as its answer.
-      var at = line.indexOf('|');
-      var name = at === -1 ? line : line.slice(0, at).trim();
-      var note = at === -1 ? '' : line.slice(at + 1).trim();
-      if (!name) throw new Error('A line has a note but no equipment name before the "|".');
-      return { name: name, url: linkFor(parsed, name), note: note };
+    return lines.map(function (name) {
+      return { name: name, url: linkFor(parsed, name) };
     });
   }
 
@@ -322,7 +295,6 @@ Gator | https://example.com/gator</textarea>
 
     var columns = parseInt($('columns').value, 10);
     var ecc = $('ecc').value;
-    var cta = $('cta').value.trim();
     sheet.style.gridTemplateColumns = 'repeat(' + columns + ', 1fr)';
 
     var biggest = 0;
@@ -335,10 +307,7 @@ Gator | https://example.com/gator</textarea>
         el.className = 'label';
         el.innerHTML =
           '<div class="name">' + escapeHtml(item.name) + '</div>' +
-          (item.note ? '<div class="note">' + escapeHtml(item.note) + '</div>' : '') +
-          window.QR.toSVG(qr, { scale: 4, margin: 2, title: item.name + ' maintenance request' }) +
-          (cta ? '<div class="cta">' + escapeHtml(cta) + '</div>' : '') +
-          '<div class="sub">Point your phone camera at the code</div>';
+          window.QR.toSVG(qr, { scale: 4, margin: 2, title: item.name + ' maintenance request' });
         sheet.appendChild(el);
       });
     } catch (e) {

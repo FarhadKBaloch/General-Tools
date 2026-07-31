@@ -239,23 +239,24 @@ in the page itself.
 1. Paste the pre-filled link into **Pre-filled form link**. The page will
    confirm which field it found.
 2. Type your equipment names, one per line, spelled exactly as in the form —
-   including `General equipment`. To print a line of smaller text under a name,
-   add it after a `|`:
+   including `General equipment`:
 
    ```
    Tractor
    Gator
    Truck
    Sprayer
-   General equipment | Ladders, stools, pallet jacks — anything else
+   General equipment
    ```
 
-   Only the name goes into the QR code; the note is just printed on the label,
-   so a crew member standing in front of the shelf knows this is the right one
-   to scan.
 3. Leave **error correction** on **Q (25%)** — that's the level that keeps
    working when a label picks up scratches and dust.
 4. Click **Generate labels**, then **Print** (or print to PDF).
+
+Each label is the equipment name and the code, and nothing else. A sticker on
+a machine is read at arm's length by someone who already knows what they are
+standing in front of; instructions on it are just ink that makes the code
+smaller.
 
 ### Making them survive a farm
 
