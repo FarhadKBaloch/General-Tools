@@ -68,7 +68,13 @@ var CONFIG = {
   formUrl: '',
 
   // Set false if you would rather not be emailed when a row is closed out.
-  notifyOnClose: true
+  notifyOnClose: true,
+
+  // How many *closed* requests the phone app loads. Open ones are always all
+  // sent. Without a cap the payload grows with the log forever, and by year
+  // three the app is downloading a decade of finished repairs on every open.
+  // The full history is always in the sheet.
+  closedHistoryShown: 50
 };
 
 // Columns this script adds and manages on the response sheet.
@@ -351,15 +357,54 @@ function installTriggers_() {
 // Triggers
 // ===========================================================================
 
+/**
+ * Run `fn` with the script lock held, so two triggers firing at once cannot
+ * interleave a read and a write.
+ *
+ * If the lock cannot be taken in time the work still runs. Two people filing a
+ * request in the same second might then share a ticket number, which is
+ * untidy; dropping a maintenance request because a lock was busy would be
+ * worse.
+ */
+function withLock_(fn) {
+  var lock = null;
+  var held = false;
+  try {
+    lock = LockService.getScriptLock();
+    held = lock.tryLock(30000);
+  } catch (err) {
+    held = false;
+  }
+  try {
+    return fn();
+  } finally {
+    if (held) {
+      SpreadsheetApp.flush();   // commit before another trigger can read
+      lock.releaseLock();
+    }
+  }
+}
+
 /** Runs on every form submission. */
 function onMaintenanceSubmit(e) {
   var sheet = responseSheet_();
   var row = e && e.range ? e.range.getRow() : sheet.getLastRow();
   var answers = readAnswers_(e, sheet, row);
 
-  var ticket = nextTicketId_(sheet, row);
-  writeCell_(sheet, row, TICKET_COL, ticket);
-  writeCell_(sheet, row, STATUS_COL, 'Open');
+  // Allocating the ticket reads the whole column and then writes to it, so it
+  // has to be atomic against another submission arriving at the same moment.
+  var ticket = withLock_(function () {
+    // Apps Script retries a trigger after a transient failure. If this row was
+    // already given a ticket, keep it rather than renumbering the request and
+    // resetting a status somebody may have moved on already.
+    var existing = readCell_(sheet, row, TICKET_COL);
+    if (existing) return existing;
+
+    var id = nextTicketId_(sheet);
+    writeCell_(sheet, row, TICKET_COL, id);
+    writeCell_(sheet, row, STATUS_COL, 'Open');
+    return id;
+  });
 
   var recipients = recipientsFor_(answers.leadership);
   writeCell_(sheet, row, ASSIGNED_COL, CONFIG.facilitiesLead);
@@ -391,6 +436,11 @@ function onMaintenanceEdit(e) {
 
   var value = String(e.range.getValue()).trim();
   if (value !== 'Done' && value !== 'Not needed') return;
+
+  // Re-picking "Done" on a request that was already closed still fires an edit.
+  // Without this the whole notify list gets a second copy of the same email.
+  var previous = String(e.oldValue === undefined ? '' : e.oldValue).trim();
+  if (previous === 'Done' || previous === 'Not needed') return;
 
   notifyClosed_(sheet, e.range.getRow(), value);
 }
@@ -456,6 +506,7 @@ function readAnswers_(e, sheet, row) {
 
 function rowAsNamedValues_(sheet, row) {
   var headers = headerRow_(sheet);
+  if (!headers.length) return {};
   var values = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
   var out = {};
   headers.forEach(function (h, i) { out[h] = [values[i]]; });
@@ -585,14 +636,48 @@ function recipientsFor_(leadershipAnswer) {
 }
 
 /** Sequential ticket ID based on the row number, e.g. MNT-0007. */
-function nextTicketId_(sheet, row) {
-  var n = row - 1;
-  var padded = ('0000' + n).slice(-4);
-  return CONFIG.ticketPrefix + '-' + padded;
+/**
+ * One past the highest ticket number already in the log.
+ *
+ * Deliberately not derived from the row number. Deleting a row shifts every
+ * row below it up, so a row-based ID would hand the next request an ID that
+ * an older request is already using — and duplicate tickets quietly break the
+ * web app's check that it is updating the row it thinks it is.
+ */
+function nextTicketId_(sheet) {
+  var headers = headerRow_(sheet);
+  var col = headers.indexOf(TICKET_COL) + 1;
+  var lastRow = sheet.getLastRow();
+  var highest = 0;
+
+  if (col > 0 && lastRow > 1) {
+    var values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+    for (var i = 0; i < values.length; i++) {
+      var found = /(\d+)\s*$/.exec(String(values[i][0]).trim());
+      if (found) highest = Math.max(highest, parseInt(found[1], 10));
+    }
+  }
+
+  // Pad to four digits without truncating: slicing the last four characters
+  // would turn ticket 10000 into "0000" and collide forever after.
+  var digits = String(highest + 1);
+  while (digits.length < 4) digits = '0' + digits;
+
+  return CONFIG.ticketPrefix + '-' + digits;
 }
 
+/**
+ * The header row, or an empty list for a sheet with nothing in it.
+ *
+ * The edit trigger fires for every tab in the file, including blank ones a
+ * user just added, and getRange(1, 1, 1, 0) is an error rather than an empty
+ * range — without this guard, clearing a cell on an empty tab throws and
+ * Google mails the owner a failure notice.
+ */
 function headerRow_(sheet) {
-  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+  var lastColumn = sheet.getLastColumn();
+  if (lastColumn < 1) return [];
+  return sheet.getRange(1, 1, 1, lastColumn).getValues()[0]
     .map(function (h) { return String(h).trim(); });
 }
 
@@ -744,11 +829,23 @@ function getRequests() {
 
   var requests = [];
   var equipmentList = {};
+  var closedShown = 0;
+  var closedHidden = 0;
+  var closedLimit = CONFIG.closedHistoryShown;
+  if (typeof closedLimit !== 'number' || closedLimit < 0) closedLimit = 50;
 
+  // Walk newest first so the closed requests that survive the cap are the
+  // recent ones.
   for (var r = values.length - 1; r >= 0; r--) {
     var v = values[r];
     var equipment = String(get(v, headerFor_(headers, q.equipment)) || '').trim();
     if (equipment) equipmentList[equipment] = true;
+
+    var status = String(get(v, STATUS_COL) || 'Open').trim() || 'Open';
+    if (status === 'Done' || status === 'Not needed') {
+      if (closedShown >= closedLimit) { closedHidden++; continue; }
+      closedShown++;
+    }
 
     var timestamp = get(v, 'Timestamp');
     var item = String(get(v, headerFor_(headers, q.item)) || '').trim();
@@ -764,7 +861,7 @@ function getRequests() {
       priority: String(get(v, q.priority) || '').trim(),
       problem: String(get(v, q.problem) || '').trim(),
       reportedBy: String(get(v, q.reportedBy) || '').trim(),
-      status: String(get(v, STATUS_COL) || 'Open').trim() || 'Open',
+      status: status,
       notes: String(get(v, NOTES_COL) || ''),
       urgent: isUrgent_(get(v, q.priority)),
       when: timestamp instanceof Date ? formatWhen_(timestamp) : String(timestamp || '')
@@ -775,7 +872,8 @@ function getRequests() {
     requests: requests,
     equipmentList: Object.keys(equipmentList).sort(),
     statuses: STATUS_OPTIONS,
-    formUrl: CONFIG.formUrl || ''
+    formUrl: CONFIG.formUrl || '',
+    closedHidden: closedHidden
   };
 }
 
@@ -793,8 +891,11 @@ function updateRequest(payload) {
     throw new Error('That request no longer exists. Pull down to refresh.');
   }
 
+  // Compare what the phone believed was on this row against what is there now.
+  // Checking only when both sides are non-empty would skip the check exactly
+  // when it matters most: a row whose ticket cell is blank.
   var onSheet = readCell_(sheet, row, TICKET_COL);
-  if (payload.ticket && onSheet && onSheet !== payload.ticket) {
+  if (payload.ticket !== undefined && String(payload.ticket).trim() !== onSheet) {
     throw new Error('The log changed since this list was loaded. Refresh and try again.');
   }
 
@@ -803,15 +904,21 @@ function updateRequest(payload) {
     throw new Error('Unknown status: ' + status);
   }
 
-  var previous = readCell_(sheet, row, STATUS_COL);
-  if (payload.notes !== undefined) writeCell_(sheet, row, NOTES_COL, String(payload.notes));
-  writeCell_(sheet, row, STATUS_COL, status);
+  // Read-then-write again: two phones saving the same request at the same
+  // moment could otherwise both see it as open and both send a closing email.
+  var transition = withLock_(function () {
+    var previous = readCell_(sheet, row, STATUS_COL);
+    if (payload.notes !== undefined) writeCell_(sheet, row, NOTES_COL, String(payload.notes));
+    writeCell_(sheet, row, STATUS_COL, status);
+    return {
+      closing: (status === 'Done' || status === 'Not needed'),
+      wasClosed: (previous === 'Done' || previous === 'Not needed')
+    };
+  });
 
-  var closing = (status === 'Done' || status === 'Not needed');
-  var wasClosed = (previous === 'Done' || previous === 'Not needed');
-  if (closing && !wasClosed) {
+  if (transition.closing && !transition.wasClosed) {
     notifyClosed_(sheet, row, status);
-  } else if (!closing) {
+  } else if (!transition.closing) {
     writeCell_(sheet, row, CLOSED_COL, '');
   }
 

@@ -433,6 +433,18 @@ its own triggers rather than adding a second copy, so it's safe to re-run.
    tab should exist listing only open requests, and **Maintenance → Send test
    email** should still arrive.
 
+### Two behaviours that changed
+
+- **Ticket numbers now continue from the highest already in your log**, instead
+  of being derived from the row number. Existing tickets keep their IDs. The
+  old scheme handed out a duplicate ID after anyone deleted a row, which
+  quietly weakened the web app's check that it is updating the right request.
+- **The phone app loads the 50 most recent closed requests**, not all of them,
+  and says so at the bottom of the list when it has trimmed any. Open requests
+  are always shown in full, and the sheet still holds everything. Change the
+  number with `closedHistoryShown` in `CONFIG`, or set it to a large value to
+  restore the old behaviour.
+
 ### What does get overwritten
 
 Two things, both cosmetic, both only if you customised them:
@@ -587,6 +599,11 @@ Sheets.
 **The web app shows "Script function not found: doGet".**
 The HTML file isn't named `webapp`, or `maintenance-notify.gs` wasn't saved
 before deploying. Both files must be in the same Apps Script project.
+
+**The phone app says "N older closed requests not shown".**
+Working as intended — it loads the 50 most recent closed requests so the
+payload does not grow with the log forever. Raise `closedHistoryShown` in
+`CONFIG` if you want more, or open the sheet for the full history.
 
 **The web app loads but shows no requests.**
 Check that the form is linked to the sheet and that at least one response

@@ -88,8 +88,13 @@
     return EXP[LOG[a] + LOG[b]];
   }
 
+  // Cached by degree: a symbol has up to 15 blocks that all share one
+  // generator polynomial, and a sheet of labels re-encodes at the same level.
+  var GENERATORS = {};
+
   /** Generator polynomial for `degree` error-correction codewords. */
   function generatorPoly(degree) {
+    if (GENERATORS[degree]) return GENERATORS[degree];
     var poly = [1];
     for (var d = 0; d < degree; d++) {
       var next = new Array(poly.length + 1).fill(0);
@@ -99,6 +104,7 @@
       }
       poly = next;
     }
+    GENERATORS[degree] = poly;
     return poly;
   }
 
@@ -507,6 +513,19 @@
   }
 
   /**
+   * Escape text for an XML attribute. The output claims to be SVG, so it has
+   * to be well-formed XML: an unescaped "&" in a name like "Truck & Trailer"
+   * makes the whole document fail to parse when it is loaded as an image.
+   */
+  function escapeXml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /**
    * Render an encoded QR code as a standalone SVG string.
    *
    * @param {object} qr      Result of encode().
@@ -531,7 +550,7 @@
 
     return '<svg xmlns="http://www.w3.org/2000/svg" width="' + dim + '" height="' + dim +
       '" viewBox="0 0 ' + dim + ' ' + dim + '" shape-rendering="crispEdges" role="img"' +
-      (opts.title ? ' aria-label="' + String(opts.title).replace(/"/g, '&quot;') + '"' : '') +
+      (opts.title ? ' aria-label="' + escapeXml(opts.title) + '"' : '') +
       '><rect width="' + dim + '" height="' + dim + '" fill="' + light + '"/>' +
       '<path fill="' + dark + '" d="' + path.join('') + '"/></svg>';
   }

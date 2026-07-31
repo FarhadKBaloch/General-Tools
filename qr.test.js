@@ -156,6 +156,24 @@ check('unknown error-correction level throws', badLevel);
 // --- SVG output ------------------------------------------------------------
 const svg = QR.toSVG(QR.encode('https://example.com', 'Q'), { scale: 4, margin: 2 });
 check('SVG is well formed', svg.startsWith('<svg') && svg.trim().endsWith('</svg>'));
+
+// The output claims to be SVG, so it has to be valid XML. An equipment name
+// like "Truck & Trailer" used to emit a bare & and break the whole document.
+for (const [title, escaped] of [
+  ['Truck & Trailer', '&amp;'],
+  ['Sprayer <300 gal>', '&lt;'],
+  ['He said "go"', '&quot;']
+]) {
+  const withTitle = QR.toSVG(QR.encode('https://example.com', 'M'), { title });
+  const label = /aria-label="([^"]*)"/.exec(withTitle);
+  check(`SVG title escapes ${JSON.stringify(title)}`,
+    label !== null && label[1].includes(escaped), label && label[1]);
+  // No raw markup characters survive outside a character reference.
+  check(`SVG title leaves no bare markup for ${JSON.stringify(title)}`,
+    !/[<>]/.test(label[1]) && !/&(?!(amp|lt|gt|quot|apos|#\d+);)/.test(label[1]), label[1]);
+}
+check('SVG omits aria-label when no title is given',
+  !QR.toSVG(QR.encode('x', 'M')).includes('aria-label'));
 check('SVG has a path of dark modules', /<path fill="#000000" d="M/.test(svg));
 check('SVG dimensions match the symbol',
   svg.includes('width="' + (QR.encode('https://example.com', 'Q').size + 4) * 4 + '"'));

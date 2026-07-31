@@ -122,6 +122,7 @@
   .rowmsg.err { color: var(--urgent); font-weight: 600; }
 
   .empty, .loading { text-align: center; color: var(--muted); padding: 44px 20px; }
+  .trimmed { text-align: center; color: var(--muted); font-size: 13px; margin: 4px 0 0; }
 
   .fab {
     position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
@@ -270,7 +271,12 @@
         '</div>';
       return;
     }
-    listEl.innerHTML = items.map(cardHtml).join('');
+    listEl.innerHTML = items.map(cardHtml).join('') +
+      (!state.onlyOpen && state.data.closedHidden
+        ? '<p class="trimmed">' + state.data.closedHidden +
+          ' older closed request' + (state.data.closedHidden === 1 ? '' : 's') +
+          ' not shown. The full history is in the sheet.</p>'
+        : '');
     listEl.querySelectorAll('.save').forEach(function (btn) {
       btn.addEventListener('click', function () { save(btn); });
     });
