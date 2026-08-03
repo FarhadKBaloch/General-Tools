@@ -349,6 +349,8 @@
     background: var(--urgent); color: #fff; border-radius: 8px;
     font-size: 10px; font-weight: 700; line-height: 16px;
   }
+  /* Open but nothing urgent: still worth counting, not worth alarming about. */
+  .tabbar button .dot.calm { background: var(--muted); }
 
   @media (prefers-color-scheme: dark) {
     :root {
@@ -853,12 +855,21 @@
       (urgent ? ' · <span class="flag">' + urgent + ' urgent</span>' : '');
   }
 
+  /**
+   * The badge sits beside a tab labelled "Open", so it counts open requests.
+   * It turns red when any of them are urgent — the count and the alarm are two
+   * different questions, and a number that silently meant "urgent" read as
+   * zero whenever nothing was on fire.
+   */
   function renderTabBadge() {
     var dot = document.getElementById('openDot');
     if (!state.open.data) { dot.hidden = true; return; }
-    var urgent = state.open.data.requests.filter(function (r) { return !isClosed(r) && r.urgent; }).length;
-    dot.hidden = urgent === 0;
-    dot.textContent = urgent;
+    var open = state.open.data.requests.filter(function (r) { return !isClosed(r); });
+    var urgent = open.filter(function (r) { return r.urgent; }).length;
+    dot.hidden = open.length === 0;
+    dot.textContent = open.length;
+    dot.classList.toggle('calm', urgent === 0);
+    dot.title = urgent ? urgent + ' of them urgent' : 'open requests';
   }
 
   // ======================================================================

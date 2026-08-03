@@ -436,19 +436,32 @@ agingAfterDays: 7,        // an open request older than this counts as "aging"
 dashboardWindowDays: 365  // how far back the per-machine figures look
 ```
 
-The Create ticket form is built from `CONFIG` too, so a machine that has never
-broken still appears in the list:
+### The Equipment tab — changing the fleet without redeploying
+
+`setUp` creates an **Equipment** tab in the spreadsheet, seeded from
+`CONFIG.equipment`. From then on **that tab is the source of truth**: one
+machine per row, and the app reads it fresh every time it loads.
+
+That matters because a fleet list changes — machines get renamed, teams get
+split — and everything else in `CONFIG` only reaches the app when you create a
+**new deployment version**. Equipment is the setting most likely to change and
+the one you least want to redeploy for, so it lives where you can edit it.
+
+To add or rename a machine: type it on the tab. That's the whole job. The next
+person to open the app sees it. (Renaming does not rewrite history — old
+requests keep the old name, which is correct: that is what they were filed
+against. Print a new sticker for the new name.)
+
+Blank rows and duplicates are ignored, and names are trimmed. If the tab is
+deleted the script falls back to `CONFIG.equipment`, so nothing breaks.
+
+The rest of the Create ticket form still comes from `CONFIG`:
 
 ```js
-equipment: ['Tractor', 'Gator', 'Truck', 'Sprayer', 'General equipment'],
 urgencyOptions: [ ... ],              // most serious first
 photoFolder: 'Equipment maintenance photos',
 photoLinkSharing: true                // see below
 ```
-
-Keep `equipment` in step with the form's answer options and with the printed
-labels — a name the script doesn't recognise is rejected rather than filed
-under something wrong.
 
 > **On `photoLinkSharing`.** Photos go into a folder in *your* Drive, and the
 > people getting the email aren't all in it. With this on, each photo gets a
@@ -764,6 +777,18 @@ before deploying. Both files must be in the same Apps Script project.
 Working as intended — it loads the 50 most recent closed requests so the
 payload does not grow with the log forever. Raise `closedHistoryShown` in
 `CONFIG` if you want more, or open the sheet for the full history.
+
+**I changed something in `CONFIG` and the app still shows the old value.**
+The app serves the **last deployed version**, not whatever is currently in the
+editor. Do **Deploy → Manage deployments → pencil → Version: New version**.
+`healthCheck` reads the editor's code, so it will happily say *All good* while
+the app is still running last week's settings — it now says so in its report.
+The one exception is the equipment list, which is read live from the Equipment
+tab and needs no redeploy.
+
+**The badge next to the Open tab.**
+It counts **open requests**, and turns red when any of them are urgent. Grey
+with a number means work outstanding but nothing on fire.
 
 **The web app loads but shows no requests.**
 Check that the form is linked to the sheet and that at least one response

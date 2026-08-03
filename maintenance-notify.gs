@@ -50,8 +50,10 @@ var CONFIG = {
     reportedBy: 'Your name'
   },
 
-  // The equipment the app offers when someone creates a ticket. Keep this in
-  // step with the form's answer options and with the printed QR labels.
+  // The starting equipment list. setUp copies this into an "Equipment" tab in
+  // the spreadsheet, and from then on THE TAB IS THE SOURCE OF TRUTH — edit it
+  // there and the app picks the change up immediately, with no redeploy. This
+  // list is only the seed, and the fallback if the tab is deleted.
   equipment: ['Tractor', 'Gator', 'Truck', 'Sprayer', 'General equipment'],
 
   // Urgency options, most serious first. The ones in urgentAnswers below get
@@ -111,6 +113,7 @@ var ASSIGNED_COL = 'Assigned to';
 var CLOSED_COL = 'Closed on';
 var NOTES_COL = 'Work done / notes';
 var PHOTO_COL = 'Photo';
+var EQUIPMENT_TAB = 'Equipment';
 var STATUS_OPTIONS = ['Open', 'In progress', 'Waiting on parts', 'Done', 'Not needed'];
 
 // ===========================================================================
@@ -123,11 +126,62 @@ var STATUS_OPTIONS = ['Open', 'In progress', 'Waiting on parts', 'Done', 'Not ne
  */
 function setUp() {
   var sheet = responseSheet_();
+  buildEquipmentTab_();
   addTrackingColumns_(sheet);
   applyReadableFormatting_(sheet);
   buildMobileTab_(sheet);
   installTriggers_();
   SpreadsheetApp.getActive().toast('Maintenance log is set up and watching for submissions.');
+}
+
+/**
+ * The equipment the app offers, read from the "Equipment" tab.
+ *
+ * Kept in the spreadsheet rather than in this file on purpose: a fleet list
+ * changes — machines get renamed, teams get split — and needing a code edit
+ * and a redeploy for that is how an app ends up showing names nobody uses any
+ * more. Editing the tab takes effect on the next page load.
+ *
+ * Falls back to CONFIG.equipment if the tab is missing or empty, so nothing
+ * breaks if someone deletes it.
+ */
+function equipmentList_() {
+  if (EQUIPMENT_CACHE) return EQUIPMENT_CACHE;
+
+  var names = [];
+  var tab = SpreadsheetApp.getActive().getSheetByName(EQUIPMENT_TAB);
+  if (tab && tab.getLastRow() > 1) {
+    tab.getRange(2, 1, tab.getLastRow() - 1, 1).getValues().forEach(function (row) {
+      var name = String(row[0] == null ? '' : row[0]).trim();
+      if (name && names.indexOf(name) === -1) names.push(name);
+    });
+  }
+  if (!names.length) names = (CONFIG.equipment || []).slice();
+
+  EQUIPMENT_CACHE = names;
+  return names;
+}
+
+var EQUIPMENT_CACHE = null;
+
+/** Create the Equipment tab on first run, seeded from CONFIG. Never overwrites. */
+function buildEquipmentTab_() {
+  var ss = SpreadsheetApp.getActive();
+  var tab = ss.getSheetByName(EQUIPMENT_TAB);
+  if (tab) return;   // already yours to edit — leave it alone
+
+  tab = ss.insertSheet(EQUIPMENT_TAB);
+  tab.getRange('A1').setValue('Equipment').setFontWeight('bold').setBackground('#e8efe9');
+  tab.getRange('B1').setValue(
+    'One machine per row. The app reads this list every time it loads, so ' +
+    'adding or renaming here needs no redeploy. Names must match the form\'s ' +
+    'answer options and the printed QR labels.'
+  ).setFontColor('#6b7472').setFontSize(9);
+
+  var seed = (CONFIG.equipment || []).map(function (name) { return [name]; });
+  if (seed.length) tab.getRange(2, 1, seed.length, 1).setValues(seed);
+  tab.setColumnWidth(1, 220);
+  tab.setFrozenRows(1);
 }
 
 /** The form-responses tab. Uses the first sheet that has a Timestamp header. */
@@ -150,12 +204,15 @@ function addTrackingColumns_(sheet) {
   var wanted = [TICKET_COL, STATUS_COL, ASSIGNED_COL, CLOSED_COL, NOTES_COL, PHOTO_COL];
   var headers = headerRow_(sheet);
 
+  var added = false;
   wanted.forEach(function (name) {
     if (headers.indexOf(name) !== -1) return;
     var col = sheet.getLastColumn() + 1;
     sheet.getRange(1, col).setValue(name).setFontWeight('bold');
     headers.push(name);
+    added = true;
   });
+  if (added) forgetHeaders_();
 
   // A dropdown on Status keeps the values consistent enough to filter on.
   var statusCol = headerRow_(sheet).indexOf(STATUS_COL) + 1;
@@ -719,10 +776,27 @@ function nextTicketId_(sheet) {
  * Google mails the owner a failure notice.
  */
 function headerRow_(sheet) {
+  // Memoised for the life of one execution. Every readCell_/writeCell_ needs
+  // the header row to find its column, so a single form submission was reading
+  // row 1 half a dozen times over. Nothing else changes the headers mid-run
+  // except addTrackingColumns_, which clears this explicitly.
+  var key = sheet.getSheetId();
+  if (HEADER_CACHE[key]) return HEADER_CACHE[key];
+
   var lastColumn = sheet.getLastColumn();
   if (lastColumn < 1) return [];
-  return sheet.getRange(1, 1, 1, lastColumn).getValues()[0]
+
+  var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0]
     .map(function (h) { return String(h).trim(); });
+  HEADER_CACHE[key] = headers;
+  return headers;
+}
+
+var HEADER_CACHE = {};
+
+/** Call after changing the header row, so the next read sees the new columns. */
+function forgetHeaders_() {
+  HEADER_CACHE = {};
 }
 
 function writeCell_(sheet, row, headerName, value) {
@@ -853,7 +927,7 @@ function doGet(e) {
 
   // Only accept a machine we actually know about, so a doctored link cannot
   // put arbitrary text on the screen.
-  template.scannedEquipment = (CONFIG.equipment || []).indexOf(asked) === -1 ? '' : asked;
+  template.scannedEquipment = equipmentList_().indexOf(asked) === -1 ? '' : asked;
 
   return template.evaluate()
     .setTitle('Millcreek Equipment Maintenance')
@@ -1147,7 +1221,7 @@ function getDashboard() {
 function getFormOptions() {
   var leadership = Object.keys(CONFIG.leadership || {});
   return {
-    equipment: (CONFIG.equipment || []).slice(),
+    equipment: equipmentList_(),
     urgency: (CONFIG.urgencyOptions || []).slice(),
     leadership: leadership.concat(['Any / no preference']),
     generalEquipment: CONFIG.generalEquipment || '',
@@ -1177,9 +1251,15 @@ function createRequest(payload) {
   var leadership = String(payload.leadership || '').trim();
   var item = String(payload.item || '').trim();
 
+  var known = equipmentList_();
+  if (!known.length) {
+    throw new Error('No equipment is set up yet. Add machines to the "' +
+      EQUIPMENT_TAB + '" tab of the log, one per row.');
+  }
   if (!equipment) throw new Error('Choose which equipment this is about.');
-  if ((CONFIG.equipment || []).indexOf(equipment) === -1) {
-    throw new Error('Unknown equipment: ' + equipment);
+  if (known.indexOf(equipment) === -1) {
+    throw new Error('"' + equipment + '" is not on the ' + EQUIPMENT_TAB +
+      ' tab. Add it there, or pick one of: ' + known.join(', '));
   }
   if (!priority) throw new Error('Choose how urgent it is.');
   if ((CONFIG.urgencyOptions || []).indexOf(priority) === -1) {
@@ -1342,18 +1422,21 @@ function healthCheck() {
   }
 
   // --- what the app offers ---
-  var equipment = CONFIG.equipment || [];
+  var equipment = equipmentList_();
   var urgency = CONFIG.urgencyOptions || [];
   if (!equipment.length) {
-    problems.push('equipment is empty — Create ticket in the app will have nothing to choose.');
+    problems.push('No equipment anywhere — add machines to the "' + EQUIPMENT_TAB +
+      '" tab, one per row. Create ticket has nothing to offer until you do.');
+  } else {
+    notes.push('Equipment (' + equipment.length + '): ' + equipment.join(', '));
   }
   if (!urgency.length) {
     problems.push('urgencyOptions is empty — Create ticket in the app will have nothing to choose.');
   }
   if (equipment.length && CONFIG.generalEquipment &&
       equipment.indexOf(CONFIG.generalEquipment) === -1) {
-    problems.push('generalEquipment ("' + CONFIG.generalEquipment + '") is not one of the ' +
-      'equipment options, so the "which item" question will never appear.');
+    problems.push('generalEquipment ("' + CONFIG.generalEquipment + '") is not on the ' +
+      EQUIPMENT_TAB + ' tab, so the "which item" question will never appear.');
   }
   (CONFIG.urgentAnswers || []).forEach(function (answer) {
     if (urgency.length && urgency.indexOf(answer) === -1) {
@@ -1402,6 +1485,13 @@ function healthCheck() {
     ? 'Found ' + problems.length + ' thing(s) to fix:\n\n• ' + problems.join('\n• ')
     : 'All good. Nothing in CONFIG or the log looks wrong.';
   if (notes.length) report += '\n\n' + notes.join('\n');
+
+  // The trap this exists to stop people falling into twice.
+  report += '\n\nThis checks the code in the editor. The app serves the last ' +
+    'DEPLOYED version, so if you have edited CONFIG since deploying, the app is ' +
+    'still running the old settings until you do Deploy > Manage deployments > ' +
+    'edit > Version: New version. (The Equipment tab is the exception — that is ' +
+    'read live and needs no redeploy.)';
 
   Logger.log(report);
 
