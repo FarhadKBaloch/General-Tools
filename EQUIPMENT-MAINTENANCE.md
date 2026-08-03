@@ -534,12 +534,42 @@ The "unverified app" warning is expected — you are the developer.
 
 ### 5. Run `healthCheck`
 
-Pick `healthCheck` and press **Run**, or use **Maintenance → Health check** from
-the spreadsheet menu. It reports anything wrong in one go: placeholder addresses
-still in place, an empty equipment list, a catch-all bucket that isn't one of
-the options, an urgency in `urgentAnswers` that no longer matches, missing
-columns, missing triggers. Fix whatever it lists and run it again until it says
+Either way works:
+
+- **From the spreadsheet:** **Maintenance → Health check**. The report opens in
+  a dialog. If you don't see the Maintenance menu, reload the spreadsheet tab —
+  the menu is added when the file opens, so it won't appear in a tab that was
+  already open when you pasted the script.
+- **From the Apps Script editor:** pick `healthCheck` in the function dropdown
+  next to **Run** — the one that probably says `setUp` — and press **Run**. The
+  report appears in the **Execution log** panel at the bottom.
+
+It checks everything easy to get quietly wrong in one pass: placeholder
+addresses still in place, an empty equipment or urgency list, a
+`generalEquipment` value that isn't one of the equipment options, an entry in
+`urgentAnswers` that no longer matches `urgencyOptions`, missing tracking
+columns, missing triggers. Fix what it lists and run it again until it says
 *All good*.
+
+A clean run looks like this:
+
+```
+All good. Nothing in CONFIG or the log looks wrong.
+
+Log: Form Responses 1, 47 requests.
+```
+
+and a run with something to fix looks like this:
+
+```
+Found 2 thing(s) to fix:
+
+• equipment is empty — Create ticket in the app will have nothing to choose.
+• The log has no "Photo" column. Run setUp.
+```
+
+`healthCheck` only reads; it never changes anything, so it's safe to run
+whenever you want to know where things stand.
 
 ### 6. Deploy the web app
 

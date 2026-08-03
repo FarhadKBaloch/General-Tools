@@ -1404,11 +1404,19 @@ function healthCheck() {
   if (notes.length) report += '\n\n' + notes.join('\n');
 
   Logger.log(report);
+
+  // Show the whole report where it was asked for: a dialog when run from the
+  // spreadsheet menu, the execution log when run from the editor.
   try {
-    SpreadsheetApp.getActive().toast(
-      problems.length ? problems.length + ' problem(s) — see the execution log' : 'All good',
-      'Health check', 8);
-  } catch (err) { /* running from the editor with no sheet open */ }
+    var ui = SpreadsheetApp.getUi();
+    ui.alert('Health check', report, ui.ButtonSet.OK);
+  } catch (err) {
+    try {
+      SpreadsheetApp.getActive().toast(
+        problems.length ? problems.length + ' problem(s) — see the execution log' : 'All good',
+        'Health check', 8);
+    } catch (err2) { /* running from the editor with no sheet attached */ }
+  }
 
   return report;
 }
