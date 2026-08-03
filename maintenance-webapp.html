@@ -291,6 +291,9 @@
   .done-panel h2 { margin: 12px 0 4px; font-size: 20px; }
   .done-panel .num { font-weight: 800; }
   .done-panel p { color: var(--muted); margin: 0 0 18px; }
+  .done-panel p.note { color: var(--ink-2); background: var(--bg);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 10px 12px; font-size: 14px; text-align: left; }
 
   /* ---- dashboard ---- */
   .panel {
@@ -679,6 +682,11 @@
           '<div class="tick" aria-hidden="true">✓</div>' +
           '<h2>Ticket <span class="num">' + esc(done.ticket) + '</span></h2>' +
           '<p>The Facilities Lead, the Owner and your leadership contact have been emailed.</p>' +
+          // The ticket is filed either way, so this is a note rather than an
+          // error — but say it, or someone walks off thinking the photo went.
+          (done.photoError
+            ? '<p class="note">' + esc(done.photoError) + ' Add it to the log later if it matters.</p>'
+            : '') +
           '<button class="primary" type="button" id="againBtn">Report something else</button>' +
           '<button class="secondary" type="button" id="doneBtn">Done</button>' +
         '</div>';
@@ -1517,6 +1525,10 @@
 
   document.getElementById('refresh').addEventListener('click', function () {
     if (state.create.open) return;
+    // The icon is already spinning, so the tap has visibly landed. Firing again
+    // would just queue another Apps Script execution on a signal that is clearly
+    // slow enough for someone to have tapped twice.
+    if (inFlight > 0) return;
     if (state.tab === 'history') fetchHistory(true);
     else if (state.tab === 'dashboard') fetchDashboard();
     else loadOpen();

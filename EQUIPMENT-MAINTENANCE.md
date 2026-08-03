@@ -394,7 +394,12 @@ Two small things that matter in practice:
 - **A photo can be attached** — a cracked weld is worth more than a paragraph.
   It's resized on the phone before it's sent (long edge 1600px, JPEG), because a
   raw camera file is several megabytes over farm signal. The photo lands in a
-  Drive folder and the link goes into the sheet, the email, and the request card.
+  Drive folder and the link goes into the sheet, the request card, and the email
+  as a **View the photo** button.
+
+  The photo is saved only once the request is safely on the sheet, and if Drive
+  is having a bad day the ticket still goes in — the app says the photo didn't
+  upload rather than losing the whole report.
 
 ### Open — what needs doing
 
@@ -694,6 +699,12 @@ equipment: ['Equipment', 'Vehicle'],
 
 It looks for `Equipment` first and falls back to `Vehicle`, so a season of
 history under the old header keeps reading correctly. Leave both in the list.
+
+The same applies to any question you reword. If a column in the log matches
+none of the accepted wordings, **Create ticket** refuses the request and names
+the column, rather than filing a ticket with a blank machine on it and emailing
+everyone about nothing. Either rename the column back, or add the new wording to
+the list in `CONFIG.questions`.
 
 ### Going back
 

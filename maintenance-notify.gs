@@ -612,6 +612,7 @@ function readAnswers_(e, sheet, row) {
     reportedBy: lookup_(named, q.reportedBy),
     email: (e && e.response ? tryRespondentEmail_(e) : '') || lookup_(named, 'Email Address'),
     timestamp: lookup_(named, 'Timestamp') || new Date(),
+    photo: lookup_(named, PHOTO_COL),
     extras: extraAnswers_(named)
   };
 }
@@ -698,7 +699,7 @@ function extraAnswers_(named) {
     titleList_(CONFIG.questions[k]).forEach(function (title) { known.push(normalise_(title)); });
   });
   known.push('timestamp', 'email address');
-  [TICKET_COL, STATUS_COL, ASSIGNED_COL, CLOSED_COL, NOTES_COL].forEach(function (c) {
+  [TICKET_COL, STATUS_COL, ASSIGNED_COL, CLOSED_COL, NOTES_COL, PHOTO_COL].forEach(function (c) {
     known.push(normalise_(c));
   });
 
@@ -856,6 +857,8 @@ function plainBody_(ticket, a, link) {
     lines.push('', x.label + ':', x.value);
   });
 
+  if (a.photo) lines.push('', 'Photo:', a.photo);
+
   lines.push('', 'Open the log to update the status:', link);
   return lines.join('\n');
 }
@@ -883,6 +886,15 @@ function htmlBody_(ticket, a, link, urgent) {
       '<td style="padding:6px 0;font-weight:600">' + esc(r[1]) + '</td></tr>';
   }).join('');
 
+  // A photo is the reason someone bothered to take one: it has to be one tap
+  // away, not a URL printed as text in a table cell.
+  var photoBlock = a.photo
+    ? '<p style="margin:0 0 18px"><a href="' + esc(a.photo) + '" ' +
+      'style="display:inline-block;border:1px solid #d7ded9;border-radius:6px;' +
+      'padding:8px 14px;color:#2f6f4e;text-decoration:none;font-weight:600;font-size:14px">' +
+      'View the photo</a></p>'
+    : '';
+
   return '' +
     '<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;' +
     'max-width:560px;color:#1c2321;line-height:1.5">' +
@@ -904,6 +916,7 @@ function htmlBody_(ticket, a, link, urgent) {
           'color:#5f6b66;margin-bottom:6px">Problem</div>' +
         '<div style="white-space:pre-wrap">' + esc(a.problem || '(no description given)') + '</div>' +
       '</div>' +
+      photoBlock +
       '<a href="' + link + '" ' +
         'style="display:inline-block;background:#2f6f4e;color:#fff;text-decoration:none;' +
         'font-weight:600;padding:10px 18px;border-radius:6px">Open the maintenance log</a>' +
@@ -1401,18 +1414,30 @@ function createRequest(payload) {
   // Taken from the session, not from the payload: it is the one field nobody
   // should be able to put someone else's name in.
   if (whoEmail) values['Email Address'] = whoEmail;
-  values[headerFor_(headers, q.equipment)] = equipment;
-  values[headerFor_(headers, q.item)] = item;
-  values[headerFor_(headers, q.priority)] = priority;
-  values[headerFor_(headers, q.problem)] = problem;
-  values[headerFor_(headers, q.reportedBy)] = reportedBy;
-  values[headerFor_(headers, q.leadership)] = leadership;
 
-  var photoUrl = '';
-  if (payload.photo && payload.photo.data) {
-    photoUrl = savePhoto_(payload.photo, equipment);
-    values[PHOTO_COL] = photoUrl;
+  // headerFor_ falls back to the preferred wording when nothing in the sheet
+  // matches, and the positional append below drops any value whose header is
+  // not really there. Renaming a question on the form used to file a ticket
+  // with a blank machine on it and email everyone about nothing, so say which
+  // column is missing instead of writing an empty row.
+  var missing = [];
+  var put = function (question, value) {
+    var header = headerFor_(headers, question);
+    if (headers.indexOf(header) === -1) { missing.push('"' + header + '"'); return; }
+    values[header] = value;
+  };
+  put(q.equipment, equipment);
+  put(q.priority, priority);
+  put(q.problem, problem);
+  put(q.reportedBy, reportedBy);
+  if (missing.length) {
+    throw new Error('The log has no ' + missing.join(' or ') + ' column, so this request ' +
+      'cannot be filed. The log currently has: ' + headers.join(', ') + '. Rename the ' +
+      'column to match, or update CONFIG.questions in the script.');
   }
+  // Optional, so a sheet without them just carries less detail.
+  put(q.item, item);
+  put(q.leadership, leadership);
 
   // One append, built positionally from the header row.
   var rowValues = headers.map(function (header) {
@@ -1424,11 +1449,26 @@ function createRequest(payload) {
     return sheet.getLastRow();
   });
 
+  // Only once the request is safely on the sheet. Saving first left a photo
+  // orphaned in Drive whenever the append failed, and losing the photo is a
+  // far smaller problem than losing the request, so this never throws.
+  var photoUrl = '';
+  var photoError = '';
+  if (payload.photo && payload.photo.data) {
+    try {
+      photoUrl = savePhoto_(payload.photo, equipment);
+      if (headers.indexOf(PHOTO_COL) !== -1) writeCell_(sheet, row, PHOTO_COL, photoUrl);
+    } catch (err) {
+      photoError = 'The ticket was filed, but the photo did not upload.';
+    }
+  }
+
   var answers = readAnswers_(null, sheet, row);
   // processNewRequest_ invalidates the cache; both routes go through it.
   var ticket = processNewRequest_(sheet, row, answers);
 
-  return { ok: true, ticket: ticket, row: row, photoUrl: photoUrl, reportedByEmail: whoEmail };
+  return { ok: true, ticket: ticket, row: row, photoUrl: photoUrl,
+           photoError: photoError, reportedByEmail: whoEmail };
 }
 
 /**
