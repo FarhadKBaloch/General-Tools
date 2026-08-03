@@ -477,144 +477,161 @@ than an accident.
 
 ---
 
-## Upgrading an install that's already running
+## Deploying an update
 
-If you already have the form, sheet and script live, you are not rebuilding
-anything. Your data, ticket numbers and QR stickers all stay as they are.
+Whether you're a version behind or several, the sequence is the same. Nothing
+here touches your data: rows, ticket numbers, statuses, notes and close dates
+all survive, and `setUp` is safe to run as many times as you like.
 
-**Nothing to redo:** the form is unchanged, so **the printed QR codes still
-work** — don't reprint them. Existing rows keep their ticket IDs, statuses,
-notes and close dates. `setUp` skips columns that already exist and replaces
-its own triggers rather than adding a second copy, so it's safe to re-run.
+**Back up first.** In the spreadsheet, **File → Make a copy**. Five seconds, and
+it makes any surprise a one-click undo.
 
-### The steps
+### 1. Note your own settings
 
-1. **Make a backup first.** In the spreadsheet: **File → Make a copy**, name it
-   something like `Maintenance Log — backup before upgrade`. Takes five seconds
-   and means any surprise is a one-click undo.
+Open **Extensions → Apps Script** and copy these five values somewhere:
 
-2. **Save your CONFIG before you overwrite it.** Open **Extensions → Apps
-   Script**, select the whole `CONFIG = { … }` block — from `var CONFIG = {`
-   down to the closing `};` — and paste it somewhere safe. This is the only
-   part of the script that holds your real email addresses, and step 3 wipes
-   it.
+```js
+facilitiesLead, owner, leadership { … }, leadershipFallback, formUrl
+```
 
-3. **Replace the script.** Click into the code, select all (`Ctrl/Cmd + A`),
-   and paste in the whole of the new `maintenance-notify.gs`.
+> **Do not paste your whole old `CONFIG` block over the new one.** That was the
+> right advice when the config had eight settings; it now has seventeen, and the
+> new ones are not optional. An old block silently leaves `equipment` and
+> `urgencyOptions` empty, which kills **Create ticket** in the app — the list
+> comes up blank and every submission is rejected — while everything else
+> carries on working, so it is easy to miss. Copy your *values* into the new
+> block, not the other way round.
 
-4. **Paste your CONFIG back** over the new placeholder one. Your old block is
-   missing the new `formUrl` setting, and that's fine — it's optional and
-   defaults to empty. Add it if you want the app's **New request** button:
+### 2. Replace the script
 
-   ```js
-   formUrl: 'https://forms.gle/your-form-link',
-   ```
+Select all in the editor and paste in the whole of `maintenance-notify.gs`.
+Put your five values back, then check the settings that describe your equipment:
 
-5. **Add the web app page.** **File → New → HTML file**, named exactly
-   `webapp`, and paste in `maintenance-webapp.html`. Save.
+```js
+equipment:      ['Tractor', 'Gator', 'Truck', 'Sprayer', 'General equipment'],
+urgencyOptions: [ … ],          // most serious first
+generalEquipment: 'General equipment',   // must be one of `equipment`
+urgentAnswers:  [ … ]           // each must be one of `urgencyOptions`
+```
 
-6. **Run `setUp`.** Pick it from the function dropdown and press Run. Google may
-   ask you to re-authorise — that's expected, the script gained new abilities.
-   This adds the formatting, builds the "On my phone" tab, and reinstalls the
-   triggers.
+Those last two lines are the easiest thing to get quietly wrong, and step 5
+checks them for you.
 
-7. **Deploy the web app**, per [Step 6](#step-6--using-the-log-on-a-phone).
+### 3. Add or replace the app page
 
-8. **Check it worked:** the log should now be colour-coded, an "On my phone"
-   tab should exist listing only open requests, and **Maintenance → Send test
-   email** should still arrive.
+**File → New → HTML file**, named exactly `webapp`, and paste in
+`maintenance-webapp.html`. If you already have one, select all and replace it.
+Save.
 
-### Moving the QR codes to the app
+### 4. Run `setUp`, and re-authorise
 
-This is the one upgrade that **does need the labels reprinted**. The stickers
-currently point at the Google Form; they need to point at the web app instead.
+Pick `setUp` from the function dropdown and press **Run**.
 
-1. **Deploy the app first** and copy its `/exec` URL.
-2. Add the new settings to `CONFIG` — `equipment`, `urgencyOptions`,
-   `photoFolder`, `photoLinkSharing`. Without `equipment` the app has nothing
-   to offer in the Create ticket list.
-3. **Run `setUp` again.** It adds a `Photo` column if the log doesn't have one.
-4. **Re-authorise the script.** Saving photos needs Drive access, which the
-   script did not have before, so Google will ask again the first time you run
-   anything.
-5. **Reprint the stickers** using the label generator's *maintenance app* mode.
-6. Leave the old form stickers up until the new ones are on the machines. They
-   keep working the whole time — both routes write to the same sheet and share
-   one ticket sequence, so there is no cutover moment and nothing to co-ordinate.
+Google will ask for permission again, because this version needs **Drive
+access** to save photos and it did not before. Click through
+*Review permissions → your account → Advanced → Go to (project) → Allow*.
+The "unverified app" warning is expected — you are the developer.
 
-If you'd rather not reprint yet, everything else in this version works with the
-old form stickers exactly as before. The app just won't know which machine
-someone scanned, so they'll pick it from the list.
+### 5. Run `healthCheck`
 
-### Two behaviours that changed
+Pick `healthCheck` and press **Run**, or use **Maintenance → Health check** from
+the spreadsheet menu. It reports anything wrong in one go: placeholder addresses
+still in place, an empty equipment list, a catch-all bucket that isn't one of
+the options, an urgency in `urgentAnswers` that no longer matches, missing
+columns, missing triggers. Fix whatever it lists and run it again until it says
+*All good*.
 
-- **Ticket numbers now continue from the highest already in your log**, instead
-  of being derived from the row number. Existing tickets keep their IDs. The
-  old scheme handed out a duplicate ID after anyone deleted a row, which
-  quietly weakened the web app's check that it is updating the right request.
+### 6. Deploy the web app
+
+- **If you have deployed the app before:** **Deploy → Manage deployments →**
+  pencil icon **→ Version: New version → Deploy**. This keeps the same URL, so
+  every printed sticker and home-screen icon keeps working.
+- **If this is your first web app deployment:** **Deploy → New deployment →**
+  gear icon **→ Web app**. Set *Execute as* **Me** and *Who has access*
+  **Anyone** (or **Anyone within your organisation** if all your crew have
+  accounts). Copy the URL it gives you — it ends in `/exec`.
+
+> Creating a *new deployment* when you meant to update an existing one mints a
+> **different URL**, and every sticker keeps opening the old version. If you do
+> it by accident, delete the new deployment and edit the original instead.
+
+### 7. Update the form
+
+The form stays as the backup route, so it is worth keeping current:
+
+1. Rename question 1 from `Vehicle` to `Equipment`, if it still says Vehicle.
+2. Add `General equipment` as an option on it.
+3. Add a short-answer question, `Which item, and where is it?`
+   ([why](#the-general-equipment-bucket)).
+
+The sheet needs nothing: Google appends any new question as a new column and
+old rows simply have it blank.
+
+### 8. Reprint the stickers — only if you're moving them to the app
+
+If your QR codes still point at the Google Form, this is the version that moves
+them to the app. Open `equipment-qr-labels.html`, leave **Link source** on *The
+maintenance app*, paste the `/exec` URL from step 6, and print.
+
+Leave the old stickers up until the new ones are on the machines. Both routes
+write to the same sheet and share one ticket sequence, so there is no cutover
+moment and nothing to co-ordinate.
+
+### 9. Check it end to end
+
+- **Maintenance → Send test email** — confirms the addresses.
+- Open the app URL on a phone. It should land on **Home** with the wordmark.
+- **Create ticket** on something harmless. Confirm the ticket number appears,
+  the email arrives, and the row is in the sheet.
+- Scan one printed sticker and confirm Home names the right machine.
+
+---
+
+## What carries over, and what changes
+
+**Untouched:** every row, ticket ID, status, work note and close date. The
+ticket sequence continues from your highest existing number.
+
+**Added, not replaced:** a `Photo` column, an "On my phone" tab, and the
+tracking columns if you don't already have them.
+
+**Overwritten, if you customised them:** column widths you set by hand, and
+conditional formatting rules on the Status and urgency columns. Rules on other
+columns are left alone.
+
+**Refused rather than clobbered:** if you happen to have a tab named
+"On my phone" that this script did not generate, `setUp` stops and asks you to
+rename it.
+
+### Two behaviours worth knowing
+
+- **Ticket numbers continue from the highest in the log**, rather than being
+  derived from the row number. The old scheme handed out a duplicate ID after
+  anyone deleted a row.
 - **The phone app loads the 50 most recent closed requests**, not all of them,
-  and says so at the bottom of the list when it has trimmed any. Open requests
-  are always shown in full, and the sheet still holds everything. Change the
-  number with `closedHistoryShown` in `CONFIG`, or set it to a large value to
-  restore the old behaviour.
+  and says so when it trims. Open requests are always shown in full, and the
+  History tab searches the whole log regardless. Change it with
+  `closedHistoryShown`.
 
-### What does get overwritten
+### If your log still says "Vehicle"
 
-Two things, both cosmetic, both only if you customised them:
-
-- **Column widths** you set by hand are replaced with the script's.
-- **Conditional formatting rules on the Status and urgency columns** are
-  replaced. Rules you added on *other* columns are left alone.
-
-And one thing that will stop you rather than break anything: if you happen to
-already have a tab named **"On my phone"**, `setUp` refuses to touch it and
-tells you to rename it first, rather than clearing whatever is in it.
-
-> **Going back**, if you ever want to: paste the old script over the new one and
-> run `setUp`. The extra columns and the mobile tab are additive — nothing in
-> the new version changes how a response is recorded, so old and new script
-> versions read the same sheet identically.
-
-### Going from vehicles to all equipment
-
-If your log started life tracking only vehicles, this is an additive change too.
-**Your existing QR codes keep working and your history stays intact** — there is
-no data migration.
-
-The one thing to know: renaming a question in Google Forms does **not** rename
-the matching column in the linked sheet. Your log will keep its `Vehicle`
-header even after the form says `Equipment`. That's fine — the script accepts
-either, which is why `CONFIG.questions.equipment` is a list:
+Renaming a question in Google Forms does **not** rename the column in the linked
+sheet, so your log may keep its `Vehicle` header. That's fine — the script
+accepts either:
 
 ```js
 equipment: ['Equipment', 'Vehicle'],
 ```
 
 It looks for `Equipment` first and falls back to `Vehicle`, so a season of
-history recorded under the old header keeps reading correctly. Leave both in
-the list; there is no benefit to removing the old one.
+history under the old header keeps reading correctly. Leave both in the list.
 
-**In the form:**
+### Going back
 
-1. Rename question 1 from `Vehicle` to `Equipment`.
-2. Add `General equipment` as a new option on it.
-3. Add the new short-answer question, `Which item, and where is it?`, and
-   optionally set up the branching described in
-   [Step 1](#the-general-equipment-bucket).
-4. Rename the form itself to *Equipment Maintenance Request*.
-
-**In the sheet:** nothing. Google appends the new question as a new column on
-the right, and old rows simply have it blank. If you'd rather the header said
-`Equipment`, you can retype that one header cell by hand — safe, since the
-script matches on header text, not position — but you don't have to.
-
-**Then:** paste in the new script (keeping your CONFIG, per the steps above),
-run `setUp`, and print one more label for `General equipment`. Nothing else
-needs reprinting.
-
-If you skip the new question entirely, everything still runs — the phone tab
-just leaves out the item column, and general-equipment requests arrive saying
-"item not specified".
+Paste the old script over the new one and run `setUp`. Everything this version
+adds is additive — extra columns, extra tabs — and nothing changes how a
+response is recorded, so old and new read the same sheet identically. You would
+lose the app's Create ticket, so put the form stickers back first.
 
 ---
 
