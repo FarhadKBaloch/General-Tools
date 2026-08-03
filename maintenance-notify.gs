@@ -83,6 +83,15 @@ var CONFIG = {
   // flag in the subject line. Match your form's wording.
   urgentAnswers: ['Safety issue - do not operate', 'Down - cannot be used'],
 
+  // Work email domain. When someone opens the app signed in with an address in
+  // this domain, "Reported by" fills itself in and the notification email can be
+  // replied to directly. Leave blank to accept any signed-in address.
+  //
+  // Google only tells the script who the viewer is when the web app's access is
+  // restricted to your organisation. Deployed as "Anyone", every viewer is
+  // anonymous and the field falls back to being typed by hand.
+  workEmailDomain: 'millcreekplants.com',
+
   // Prefix for generated ticket IDs, e.g. MNT-0007.
   ticketPrefix: 'MNT',
 
@@ -490,6 +499,7 @@ function onMaintenanceSubmit(e) {
  * need to know. Shared by the form trigger and by the app's Create Ticket.
  */
 function processNewRequest_(sheet, row, answers) {
+  bumpGeneration_();   // a form submission changes the numbers too
   // Allocating the ticket reads the whole column and then writes to it, so it
   // has to be atomic against another request arriving at the same moment.
   var ticket = withLock_(function () {
@@ -1118,6 +1128,55 @@ function searchRequests(options) {
  * the whole log to a phone so it can count rows would undo the payload cap.
  */
 function getDashboard() {
+  var cached = cacheGet_('dashboard');
+  if (cached) return cached;
+  var built = buildDashboard_();
+  cachePut_('dashboard', built, 90);
+  return built;
+}
+
+/**
+ * A small cache in front of the expensive reads.
+ *
+ * Every write bumps a generation counter that is part of the key, so a new
+ * ticket or a status change invalidates instantly rather than leaving someone
+ * looking at numbers that disagree with the list they just changed.
+ */
+function cacheGeneration_() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var gen = props.getProperty('gen');
+    return gen || '0';
+  } catch (err) {
+    return '0';
+  }
+}
+
+function bumpGeneration_() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty('gen', String(Number(props.getProperty('gen') || 0) + 1));
+  } catch (err) { /* cache just stays warm a little longer */ }
+}
+
+function cacheGet_(name) {
+  try {
+    var raw = CacheService.getScriptCache().get(name + ':' + cacheGeneration_());
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function cachePut_(name, value, seconds) {
+  try {
+    var json = JSON.stringify(value);
+    if (json.length > 90000) return;   // CacheService caps entries at 100KB
+    CacheService.getScriptCache().put(name + ':' + cacheGeneration_(), json, seconds);
+  } catch (err) { /* not worth failing a request over */ }
+}
+
+function buildDashboard_() {
   var snapshot = logSnapshot_();
   var now = Date.now();
   var windowDays = CONFIG.dashboardWindowDays;
@@ -1125,7 +1184,8 @@ function getDashboard() {
   var windowStart = now - windowDays * DAY_MS;
 
   var byStatus = {};
-  STATUS_OPTIONS.forEach(function (status) { byStatus[status] = 0; });
+  var openByStatus = {};
+  STATUS_OPTIONS.forEach(function (status) { byStatus[status] = 0; openByStatus[status] = 0; });
 
   var open = [];
   var perEquipment = {};
@@ -1144,6 +1204,8 @@ function getDashboard() {
     if (!request.closed) {
       stats.open++;
       open.push(request);
+      if (openByStatus[request.status] === undefined) openByStatus[request.status] = 0;
+      openByStatus[request.status]++;
     }
 
     // Downtime: how long a machine was unusable, counted only for the reports
@@ -1200,6 +1262,11 @@ function getDashboard() {
       byStatus: STATUS_OPTIONS.map(function (status) {
         return { status: status, count: byStatus[status] || 0 };
       }),
+      // Only the live states. A ring of every status ever is 90% "Done" and
+      // says nothing about whether the backlog is under control.
+      openByStatus: STATUS_OPTIONS
+        .filter(function (status) { return status !== 'Done' && status !== 'Not needed'; })
+        .map(function (status) { return { status: status, count: openByStatus[status] || 0 }; }),
       oldest: oldest ? {
         ticket: oldest.ticket,
         label: oldest.label,
@@ -1211,6 +1278,28 @@ function getDashboard() {
     offenders: offenders.slice(0, 8),
     downtime: downtime.slice(0, 8)
   };
+}
+
+/**
+ * The signed-in viewer's work address, or '' if we cannot tell.
+ *
+ * Returns nothing rather than guessing: getEffectiveUser() would hand back the
+ * script owner, which would stamp every crew member's ticket with your name.
+ */
+function viewerEmail_() {
+  var email = '';
+  try {
+    email = String(Session.getActiveUser().getEmail() || '').trim();
+  } catch (err) {
+    return '';
+  }
+  if (!email) return '';
+
+  var domain = String(CONFIG.workEmailDomain || '').trim().toLowerCase();
+  if (domain && email.toLowerCase().slice(-(domain.length + 1)) !== '@' + domain) {
+    return '';   // signed in, but with a personal account
+  }
+  return email;
 }
 
 /**
@@ -1228,7 +1317,8 @@ function getFormOptions() {
     urgentAnswers: (CONFIG.urgentAnswers || []).slice(),
     itemQuestion: titleList_(CONFIG.questions.item)[0],
     photosEnabled: true,
-    formUrl: CONFIG.formUrl || ''
+    formUrl: CONFIG.formUrl || '',
+    viewerEmail: viewerEmail_()
   };
 }
 
@@ -1276,8 +1366,12 @@ function createRequest(payload) {
   if (!headers.length) throw new Error('The log has no header row. Run setUp first.');
 
   var q = CONFIG.questions;
+  var whoEmail = viewerEmail_();
   var values = {};
   values['Timestamp'] = new Date();
+  // Taken from the session, not from the payload: it is the one field nobody
+  // should be able to put someone else's name in.
+  if (whoEmail) values['Email Address'] = whoEmail;
   values[headerFor_(headers, q.equipment)] = equipment;
   values[headerFor_(headers, q.item)] = item;
   values[headerFor_(headers, q.priority)] = priority;
@@ -1303,8 +1397,9 @@ function createRequest(payload) {
 
   var answers = readAnswers_(null, sheet, row);
   var ticket = processNewRequest_(sheet, row, answers);
+  bumpGeneration_();
 
-  return { ok: true, ticket: ticket, row: row, photoUrl: photoUrl };
+  return { ok: true, ticket: ticket, row: row, photoUrl: photoUrl, reportedByEmail: whoEmail };
 }
 
 /**
@@ -1376,6 +1471,8 @@ function updateRequest(payload) {
       wasClosed: (previous === 'Done' || previous === 'Not needed')
     };
   });
+
+  bumpGeneration_();
 
   if (transition.closing && !transition.wasClosed) {
     notifyClosed_(sheet, row, status);

@@ -385,8 +385,12 @@ answered.
 
 Two small things that matter in practice:
 
-- **The reporter's name is remembered on that phone**, so it's typed once rather
-  than every time.
+- **Reported by fills itself in** with the signed-in person's work address, so
+  nobody types their name and the notification email can be replied to
+  straight back to them. It stays editable, for filing on someone else's
+  behalf. **This only works if the web app's access is restricted to your
+  organisation** — see the trade below. When it can't tell who the viewer is,
+  the field falls back to the name remembered on that phone.
 - **A photo can be attached** — a cracked weld is worth more than a paragraph.
   It's resized on the phone before it's sent (long edge 1600px, JPEG), because a
   raw camera file is several megabytes over farm signal. The photo lands in a
@@ -417,8 +421,13 @@ Two small things that matter in practice:
 
 ### Dashboard — for whoever has to answer for the backlog
 
-- **Backlog**: how many requests are open, how many are urgent, how many have
-  been sitting longer than a week, and which one has been open longest.
+- **Backlog**: a single large figure for what's open, with two ring meters
+  qualifying it — how many are urgent, and how many have been sitting longer
+  than a week — plus the oldest one still open.
+- **Where the backlog sits**: a ring showing the open requests split by stage.
+  Deliberately only the *live* states: a ring of every status ever logged would
+  be nine-tenths "Done" and answer nothing. Every segment is named and counted
+  in the legend beside it, so it never has to be read by colour alone.
 - **Out of service now**: anything reported as a safety issue or unusable and
   still open, with how many days it has been down.
 - **Requests per machine** over the last twelve months. This is the number that
@@ -428,7 +437,14 @@ Two small things that matter in practice:
 - **Every request by status**, so the totals reconcile against the sheet.
 
 Everything on the dashboard is counted on the server and only the totals travel
-to the phone, so it stays fast no matter how long the log gets. Two settings in
+to the phone, so it stays fast no matter how long the log gets. It is also
+cached for 90 seconds, and any new ticket or status change clears that cache
+immediately — so the numbers never disagree with the list you just changed.
+
+**Tab switching is instant** because the History and Dashboard tabs are fetched
+quietly in the background as soon as Home has loaded, rather than when you first
+tap them. On Apps Script the first request of a session carries the cold start;
+warming the others while someone is still reading Home hides it. Two settings in
 `CONFIG` control it:
 
 ```js
@@ -483,6 +499,15 @@ spreadsheet itself — which is usually what you want. The flip side is that
 anyone with the URL can update requests. For an internal maintenance log that's
 the same trust model as the form itself, but it is a deliberate choice rather
 than an accident.
+
+> **The trade behind the auto-filled address.** Google only tells the script
+> who is looking when the deployment's *Who has access* is **Anyone within
+> your organisation**. Set to **Anyone**, every viewer is anonymous: the field
+> is typed by hand and the notification has no reply-to. Restricting access
+> makes the app identify people properly, but locks out anyone without a
+> company Google account — seasonal crew, most often. Pick whichever costs you
+> less; both work, and `CONFIG.workEmailDomain` guards against someone signed
+> into a personal account being recorded as the reporter.
 
 > **If you deploy an updated version later**, use **Deploy → Manage deployments
 > → Edit → Version: New version**. Creating a *new deployment* instead mints a

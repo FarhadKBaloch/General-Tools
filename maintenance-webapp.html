@@ -32,6 +32,11 @@
     --data-count: #2a78d6;
     --data-down: #eb6834;
     --track: #eaeee9;
+    /* Backlog ring: three live statuses. Validated all-pairs in both modes —
+       a ring wraps, so every segment neighbours every other. */
+    --st-open: #eda100;
+    --st-progress: #2a78d6;
+    --st-waiting: #1baf7a;
     --radius: 6px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -64,12 +69,22 @@
   h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
   .counts { font-size: 13px; color: var(--muted); white-space: nowrap; }
   .counts .flag { color: var(--urgent); font-weight: 700; }
+  /* Sits in the header as a quiet affordance, not a boxed control. It gets its
+     44px touch target from padding rather than from a visible border. */
   #refresh {
     flex: 0 0 auto; width: 44px; height: 44px;
-    font: inherit; font-size: 17px;
-    border: 1px solid var(--line); border-radius: var(--radius);
-    background: var(--card); color: var(--accent); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    margin-right: -10px;              /* optical alignment with the page edge */
+    font: inherit; font-size: 18px; line-height: 1;
+    border: none; border-radius: 50%;
+    background: none; color: var(--muted); cursor: pointer;
+    transition: color .15s, background .15s;
   }
+  #refresh:hover { color: var(--accent); background: var(--line-2); }
+  #refresh:active { background: var(--line); }
+  #refresh.busy { color: var(--accent); animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { #refresh.busy { animation: none; opacity: .5; } }
   #subbar:empty { display: none; }
 
   .filters {
@@ -110,7 +125,7 @@
     font: inherit; font-size: 20px; cursor: pointer;
   }
 
-  main { padding: 16px 16px calc(88px + env(safe-area-inset-bottom)); }
+  main { padding: 16px 16px calc(96px + max(env(safe-area-inset-bottom), 14px)); }
 
   /* ---- home ---- */
   .lockup-big { text-align: center; padding: 18px 0 22px; }
@@ -286,6 +301,38 @@
     text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
   .panel .caption { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
 
+  /* The one number the dashboard leads with. Proportional figures, not tabular:
+     tabular gives every digit the width of a zero and looks loose this large. */
+  .hero { text-align: center; padding: 6px 0 2px; }
+  .hero .figure { font-size: 54px; font-weight: 800; line-height: 1; letter-spacing: -.03em; }
+  .hero .label { margin-top: 4px; }
+
+  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+  .meter { display: flex; align-items: center; gap: 11px; }
+  .meter svg { flex: 0 0 auto; }
+  .meter .mtext { min-width: 0; }
+  .meter .mval { font-size: 17px; font-weight: 800; line-height: 1.1; }
+  .meter .mkey { font-size: 11px; color: var(--muted); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+
+  .ring { display: flex; justify-content: center; padding: 4px 0 2px; }
+  .ringwrap { position: relative; }
+  .ringwrap .middle {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; pointer-events: none;
+  }
+  .ringwrap .middle .n { font-size: 26px; font-weight: 800; line-height: 1; }
+  .ringwrap .middle .t { font-size: 10px; color: var(--muted); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .07em; margin-top: 3px; }
+
+  /* Legend, always present for two or more segments: identity is never colour
+     alone, and the count rides the row so the ring never has to be measured. */
+  .legend { list-style: none; margin: 14px 0 0; padding: 0; }
+  .legend li { display: flex; align-items: center; gap: 9px; padding: 6px 0; font-size: 14px; }
+  .legend .sw { width: 11px; height: 11px; border-radius: 2px; flex: 0 0 auto; }
+  .legend .nm { flex: 1; min-width: 0; }
+  .legend .ct { font-weight: 700; }
+
   .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .tile .value { font-size: 30px; font-weight: 800; line-height: 1.05; }
   .tile .name { font-size: 11px; color: var(--muted); margin-top: 3px;
@@ -332,7 +379,10 @@
     display: flex;
     background: var(--card);
     border-top: 1px solid var(--line);
-    padding-bottom: env(safe-area-inset-bottom);
+    /* Android gesture navigation draws its pill over the bottom of the page and
+       reports no safe-area inset, so the labels were being covered. The floor
+       keeps them clear there; iOS still gets its real inset when it is larger. */
+    padding-bottom: max(env(safe-area-inset-bottom), 14px);
   }
   .tabbar button {
     flex: 1; min-height: 58px;
@@ -359,6 +409,7 @@
       --accent: #5bab7f; --accent-ink: #8fcaa8;
       --urgent: #f0a396; --urgent-bg: #46201a;
       --data-count: #3987e5; --data-down: #d95926; --track: #2a312e;
+      --st-open: #c98500; --st-progress: #3987e5; --st-waiting: #199e70;
     }
     .badge.status[data-status="Open"] { background: #4a3a12; color: #f4d391; }
     .badge.status[data-status="In progress"] { background: #1d3352; color: #b9d3f2; }
@@ -425,6 +476,7 @@
       equipmentList: [], loaded: false, loading: false, error: ''
     },
     dashboard: { data: null, loaded: false, error: '' },
+    prefetched: false,
     create: { open: false, submitting: false, error: '', done: null, photo: null }
   };
 
@@ -465,19 +517,51 @@
       .getFormOptions();
   }
 
+  var inFlight = 0;
+
+  /** Spin the header icon while anything is loading, so a tap has a visible effect. */
+  function busy(delta) {
+    inFlight = Math.max(0, inFlight + delta);
+    var btn = document.getElementById('refresh');
+    if (btn) btn.classList.toggle('busy', inFlight > 0);
+  }
+
   function loadOpen() {
     state.open.error = '';
+    busy(1);
     google.script.run
       .withSuccessHandler(function (data) {
+        busy(-1);
         state.open.data = data;
         renderTabBadge();
         if (state.tab === 'open' || state.tab === 'home') render();
+        prefetch();
       })
       .withFailureHandler(function (err) {
+        busy(-1);
         state.open.error = errText(err);
         if (state.tab === 'open' || state.tab === 'home') render();
       })
       .getRequests();
+  }
+
+  /**
+   * Quietly warm the other tabs once the first screen is up.
+   *
+   * Every tab is a separate server round trip, and on Apps Script the first one
+   * of those carries the cold start. Fetching them while someone is still
+   * reading Home turns a two-second tab switch into an instant one. Staggered so
+   * the two requests do not contend with each other on a slow connection.
+   */
+  function prefetch() {
+    if (state.prefetched) return;
+    state.prefetched = true;
+    setTimeout(function () {
+      if (!state.dashboard.loaded) fetchDashboard(true);
+    }, 300);
+    setTimeout(function () {
+      if (!state.history.loaded) fetchHistory(true, true);
+    }, 1200);
   }
 
   // ======================================================================
@@ -596,7 +680,10 @@
     }
 
     var chosen = state.scanned && opts.equipment.indexOf(state.scanned) !== -1 ? state.scanned : '';
-    var name = remembered(NAME_KEY);
+    // Google only tells the app who the viewer is when the deployment is
+    // restricted to the organisation. When it does, that beats anything typed.
+    var name = opts.viewerEmail || remembered(NAME_KEY);
+    var fromAccount = !!opts.viewerEmail;
 
     function optionList(values, selected) {
       return values.map(function (v) {
@@ -629,8 +716,12 @@
         '<label class="field" for="fProblem">What needs attention? <span class="req">*</span></label>' +
         '<textarea id="fProblem" placeholder="What is wrong, and anything you noticed"></textarea>' +
 
-        '<label class="field" for="fName">Your name <span class="req">*</span></label>' +
-        '<input type="text" id="fName" value="' + esc(name) + '" placeholder="Who to ask if it needs following up">' +
+        '<label class="field" for="fName">Reported by <span class="req">*</span></label>' +
+        '<input type="text" id="fName" value="' + esc(name) + '" ' +
+          'placeholder="Who to ask if it needs following up">' +
+        (fromAccount
+          ? '<div class="hint">From your Millcreek account. Change it if you are filing this for someone else.</div>'
+          : '') +
 
         '<label class="field" for="fLead">Leadership Team contact</label>' +
         '<select id="fLead">' + optionList(opts.leadership, 'Any / no preference') + '</select>' +
@@ -766,6 +857,7 @@
         // Everything downstream is now out of date.
         state.dashboard.loaded = false;
         state.history.loaded = false;
+        state.prefetched = false;
         loadOpen();
         render();
       })
@@ -959,6 +1051,8 @@
         renderTabBadge();
         state.dashboard.loaded = false;
         state.history.loaded = false;
+        state.prefetched = false;
+        prefetch();
       })
       .withFailureHandler(function (err) {
         btn.disabled = false;
@@ -1017,17 +1111,19 @@
     });
   }
 
-  function fetchHistory(reset) {
+  function fetchHistory(reset, quiet) {
     var h = state.history;
     if (reset) { h.requests = []; h.total = 0; h.hasMore = false; }
     h.loading = true;
     h.error = '';
     h.loaded = true;
+    if (!quiet) busy(1);
 
     var token = ++tokens.history;
     var query = h.query.trim();
 
     function ok(result) {
+      if (!quiet) busy(-1);
       if (token !== tokens.history) return;   // a newer request already answered
       h.loading = false;
       h.requests = h.requests.concat(result.requests || []);
@@ -1037,8 +1133,10 @@
       if (state.tab === 'history') render();
     }
     function fail(err) {
+      if (!quiet) busy(-1);
       if (token !== tokens.history) return;
       h.loading = false;
+      if (quiet) { h.loaded = false; return; }   // let a real visit retry
       h.error = errText(err);
       if (state.tab === 'history') render();
     }
@@ -1096,20 +1194,85 @@
   // Dashboard tab
   // ======================================================================
 
-  function fetchDashboard() {
+  function fetchDashboard(quiet) {
     state.dashboard.loaded = true;
     state.dashboard.error = '';
+    if (!quiet) busy(1);
     if (state.tab === 'dashboard') viewEl.innerHTML = '<div class="loading">Building the dashboard…</div>';
     google.script.run
       .withSuccessHandler(function (data) {
+        if (!quiet) busy(-1);
         state.dashboard.data = data;
         if (state.tab === 'dashboard') render();
       })
       .withFailureHandler(function (err) {
+        if (!quiet) busy(-1);
         state.dashboard.error = errText(err);
+        // A background warm-up that failed should not poison the tab; let a
+        // real visit try again.
+        if (quiet) { state.dashboard.loaded = false; return; }
         if (state.tab === 'dashboard') render();
       })
       .getDashboard();
+  }
+
+  /**
+   * A ring meter: one ratio against its whole. Circumference-based, so the arc
+   * is drawn rather than animated into place, and the value is always written
+   * beside it — the ring shows the shape, the number carries the fact.
+   */
+  function ringMeter(value, total, hue, size) {
+    size = size || 46;
+    var r = (size - 7) / 2;
+    var circ = 2 * Math.PI * r;
+    var share = total > 0 ? Math.min(value / total, 1) : 0;
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size +
+        '" role="img" aria-label="' + value + ' of ' + total + '">' +
+        '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r +
+          '" fill="none" stroke="var(--track)" stroke-width="7"/>' +
+        (share > 0
+          ? '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r +
+            '" fill="none" stroke="' + hue + '" stroke-width="7" stroke-linecap="round"' +
+            ' stroke-dasharray="' + (circ * share).toFixed(2) + ' ' + circ.toFixed(2) + '"' +
+            ' transform="rotate(-90 ' + size / 2 + ' ' + size / 2 + ')"/>'
+          : '') +
+      '</svg>';
+  }
+
+  /**
+   * A donut for part-to-whole across the live backlog states.
+   *
+   * Segments are separated by a 2px gap in the surface colour rather than a
+   * stroke, and every segment is also named and counted in the legend below —
+   * the colours sit in the CVD warn band in dark mode, where that second
+   * channel stops being a nicety.
+   */
+  function donut(segments, total, size) {
+    size = size || 132;
+    var stroke = 20;
+    var r = (size - stroke) / 2;
+    var circ = 2 * Math.PI * r;
+    var gap = total > 1 ? 2 : 0;          // no gap when one segment fills the ring
+    var offset = 0;
+
+    var arcs = segments.filter(function (seg) { return seg.value > 0; }).map(function (seg) {
+      var len = Math.max((seg.value / total) * circ - gap, 1);
+      var arc = '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r +
+        '" fill="none" stroke="' + seg.hue + '" stroke-width="' + stroke + '"' +
+        ' stroke-dasharray="' + len.toFixed(2) + ' ' + (circ - len).toFixed(2) + '"' +
+        ' stroke-dashoffset="' + (-offset).toFixed(2) + '"' +
+        ' transform="rotate(-90 ' + size / 2 + ' ' + size / 2 + ')">' +
+        '<title>' + esc(seg.name) + ': ' + seg.value + '</title></circle>';
+      offset += (seg.value / total) * circ;
+      return arc;
+    }).join('');
+
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size +
+        '" role="img" aria-label="Open requests by status">' +
+        '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r +
+          '" fill="none" stroke="var(--track)" stroke-width="' + stroke + '"/>' +
+        arcs +
+      '</svg>';
   }
 
   /**
@@ -1153,15 +1316,20 @@
     var b = d.backlog;
     var html = '';
 
+    // The one figure the dashboard leads with, then the two ratios that qualify
+    // it. A count and a share are different questions, so they get different marks.
     html += '<section class="panel">' +
       '<h2>Backlog</h2>' +
       '<p class="caption">Everything not yet closed out.</p>' +
-      '<div class="tiles">' +
-        '<div class="tile"><div class="value num">' + b.open + '</div><div class="name">open</div></div>' +
-        '<div class="tile' + (b.urgent ? ' alert' : '') + '"><div class="value num">' + b.urgent +
-          '</div><div class="name">urgent</div></div>' +
-        '<div class="tile' + (b.aging ? ' alert' : '') + '"><div class="value num">' + b.aging +
-          '</div><div class="name">over ' + d.agingAfterDays + 'd</div></div>' +
+      '<div class="hero"><div class="figure">' + b.open + '</div>' +
+        '<div class="label eyebrow">open request' + (b.open === 1 ? '' : 's') + '</div></div>' +
+      '<div class="meters">' +
+        '<div class="meter">' + ringMeter(b.urgent, b.open, 'var(--urgent)') +
+          '<div class="mtext"><div class="mval">' + b.urgent + ' of ' + b.open + '</div>' +
+          '<div class="mkey">urgent</div></div></div>' +
+        '<div class="meter">' + ringMeter(b.aging, b.open, 'var(--data-down)') +
+          '<div class="mtext"><div class="mval">' + b.aging + ' of ' + b.open + '</div>' +
+          '<div class="mkey">over ' + d.agingAfterDays + ' days</div></div></div>' +
       '</div>' +
       (b.oldest
         ? '<div class="oldest"><div class="lead eyebrow">Oldest still open</div>' +
@@ -1170,6 +1338,31 @@
             esc(b.oldest.status) + ')</span></div>'
         : '') +
       '</section>';
+
+    // Part-to-whole across the live states only. A ring of every status ever
+    // logged would be nine-tenths "Done" and answer nothing.
+    var live = (b.openByStatus || []).map(function (seg) {
+      return {
+        name: seg.status, value: seg.count,
+        hue: seg.status === 'Open' ? 'var(--st-open)'
+          : seg.status === 'In progress' ? 'var(--st-progress)' : 'var(--st-waiting)'
+      };
+    });
+    var liveTotal = live.reduce(function (sum, seg) { return sum + seg.value; }, 0);
+    if (liveTotal > 0) {
+      html += '<section class="panel">' +
+        '<h2>Where the backlog sits</h2>' +
+        '<p class="caption">The ' + plural(liveTotal, 'open request') + ', by what stage they are at.</p>' +
+        '<div class="ring"><div class="ringwrap">' + donut(live, liveTotal) +
+          '<div class="middle"><div class="n">' + liveTotal + '</div><div class="t">open</div></div>' +
+        '</div></div>' +
+        '<ul class="legend">' + live.map(function (seg) {
+          return '<li><span class="sw" style="background:' + seg.hue + '"></span>' +
+            '<span class="nm">' + esc(seg.name) + '</span>' +
+            '<span class="ct num">' + seg.value + '</span></li>';
+        }).join('') + '</ul>' +
+        '</section>';
+    }
 
     if (d.downNow && d.downNow.length) {
       html += '<section class="panel">' +
