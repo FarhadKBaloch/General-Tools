@@ -116,7 +116,7 @@
 
 <header>
   <h1>Equipment QR labels</h1>
-  <p>Generates printable QR labels that open a pre-filled maintenance request for each piece of equipment. Runs entirely in this page &mdash; nothing is uploaded.</p>
+  <p>Generates printable QR labels that open the maintenance app with the right machine already selected. Runs entirely in this page &mdash; nothing is uploaded.</p>
 </header>
 
 <main>
@@ -125,11 +125,32 @@
 
     <label for="mode">Link source</label>
     <select id="mode">
-      <option value="prefill">One pre-filled Google Form link, one item per line (recommended)</option>
+      <option value="app">The maintenance app, one item per line (recommended)</option>
+      <option value="prefill">A pre-filled Google Form link (the backup route)</option>
       <option value="explicit">A separate link for each item</option>
     </select>
 
-    <div id="prefillFields">
+    <div id="appFields">
+      <label for="appUrl">
+        Web app link
+        <span class="hint">In the Apps Script editor: <em>Deploy</em> &rarr; <em>Manage deployments</em> &rarr; copy the web app URL. It ends in <code>/exec</code>.</span>
+      </label>
+      <input type="text" id="appUrl" placeholder="https://script.google.com/macros/s/AKfycb.../exec">
+      <div id="appDetected" class="detected" hidden></div>
+
+      <label for="appEquipments">
+        Equipment
+        <span class="hint">One per line, matching the names in the script's <code>CONFIG.equipment</code>.
+        The name is the only thing printed on the label.</span>
+      </label>
+      <textarea id="appEquipments" spellcheck="false">Tractor
+Gator
+Truck
+Sprayer
+General equipment</textarea>
+    </div>
+
+    <div id="prefillFields" hidden>
       <label for="baseUrl">
         Pre-filled form link
         <span class="hint">In your Google Form: &#8942; menu &rarr; <em>Get pre-filled link</em> &rarr; pick any one item &rarr; <em>Get link</em> &rarr; <em>Copy link</em>.</span>
@@ -255,7 +276,54 @@ Gator | https://example.com/gator</textarea>
     });
   }
 
+  /** Build the app link for one machine: <web app URL>?equipment=Tractor */
+  function appLinkFor(rawUrl, name) {
+    var url;
+    try {
+      url = new URL(rawUrl.trim());
+    } catch (e) {
+      throw new Error('That does not look like a complete link. It should start with https://');
+    }
+    if (!/^https:\/\/script\.google\.com\//.test(url.origin + url.pathname)) {
+      throw new Error('That is not an Apps Script web app link. It should start with ' +
+        'https://script.google.com/ and end in /exec');
+    }
+    url.searchParams.set('equipment', name);
+    return url.toString();
+  }
+
+  function showAppDetected() {
+    var box = $('appDetected');
+    var raw = $('appUrl').value.trim();
+    if (!raw) { box.hidden = true; return; }
+    box.hidden = false;
+    try {
+      var sample = appLinkFor(raw, 'Tractor');
+      if (!/\/exec(\?|$)/.test(raw.split('?')[0] + '?')) {
+        box.innerHTML = 'This link does not end in <code>/exec</code>. A <code>/dev</code> ' +
+          'link only works for you while signed in \u2014 use the deployment URL instead.';
+        return;
+      }
+      box.innerHTML = 'Each label will open ' +
+        '<code>' + escapeHtml(sample.replace(/^https:\/\/script\.google\.com/, '\u2026')) + '</code>';
+    } catch (e) {
+      box.textContent = e.message;
+    }
+  }
+
   function collectLabels() {
+    if ($('mode').value === 'app') {
+      var appUrl = $('appUrl').value.trim();
+      if (!appUrl) throw new Error('Paste the web app link first.');
+      var appNames = $('appEquipments').value.split('\n')
+        .map(function (v) { return v.trim(); })
+        .filter(Boolean);
+      if (!appNames.length) throw new Error('Add at least one piece of equipment.');
+      return appNames.map(function (name) {
+        return { name: name, url: appLinkFor(appUrl, name) };
+      });
+    }
+
     if ($('mode').value === 'explicit') {
       return $('pairs').value.split('\n')
         .map(function (line) { return line.trim(); })
@@ -322,18 +390,19 @@ Gator | https://example.com/gator</textarea>
   }
 
   $('mode').addEventListener('change', function () {
-    var explicit = this.value === 'explicit';
-    $('prefillFields').hidden = explicit;
-    $('explicitFields').hidden = !explicit;
+    $('appFields').hidden = this.value !== 'app';
+    $('prefillFields').hidden = this.value !== 'prefill';
+    $('explicitFields').hidden = this.value !== 'explicit';
   });
   $('baseUrl').addEventListener('input', showDetected);
+  $('appUrl').addEventListener('input', showAppDetected);
   $('generate').addEventListener('click', render);
   $('print').addEventListener('click', function () {
     if (!sheet.children.length) render();
     if (sheet.children.length) window.print();
   });
 
-  setStatus('Paste your pre-filled form link above, then choose Generate labels.');
+  setStatus('Paste your web app link above, then choose Generate labels.');
 })();
 </script>
 </body>

@@ -1,49 +1,82 @@
 <!--
-  maintenance-webapp.html — the phone-friendly view of the maintenance log.
+  maintenance-webapp.html — the Millcreek equipment maintenance app.
 
   Paste this into the same Apps Script project as maintenance-notify.gs, as an
   HTML file named exactly "webapp" (File -> New -> HTML file -> name it webapp).
   Then Deploy -> New deployment -> Web app.
 
-  Cards instead of a grid, thumb-sized controls, and no sideways scrolling.
+  Four tabs along the bottom, where a thumb reaches them:
+    Home      — the wordmark, Create Ticket, and what is outstanding
+    Open      — what needs doing, and the controls to update it
+    History   — the full service record, searchable
+    Dashboard — backlog, repeat offenders and downtime for managers
+
+  Look: clean and plain, workshop rather than consumer app. Squared corners,
+  uppercase micro-labels, tabular figures, one green accent doing all the work.
 -->
 <style>
   :root {
-    --ink: #1c2321;
-    --muted: #6b7472;
-    --line: #dfe5e1;
-    --bg: #f4f6f4;
-    --accent: #2f6f4e;
+    --ink: #1a1f1c;
+    --ink-2: #3d4642;
+    --muted: #6b7570;
+    --line: #dde3de;
+    --line-2: #eef1ee;
+    --bg: #f4f6f3;
+    --card: #ffffff;
+    --accent: #2d6a4a;      /* nursery green — the one colour that acts */
+    --accent-ink: #1e4a33;
     --urgent: #8e2a1c;
-    --urgent-bg: #fbe0dd;
+    --urgent-bg: #fbe3df;
+    /* Data hues, deliberately not the accent: green means "do something" here,
+       not "measure something". Validated against both card surfaces. */
+    --data-count: #2a78d6;
+    --data-down: #eb6834;
+    --track: #eaeee9;
+    --radius: 6px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; }
   body {
-    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
     color: var(--ink);
     background: var(--bg);
-    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* Uppercase micro-label — the workshop-signage note that runs through the app */
+  .eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--muted);
   }
 
   header {
     position: sticky; top: 0; z-index: 5;
-    background: #fff;
+    background: var(--card);
     border-bottom: 1px solid var(--line);
-    padding: 12px 16px 0;
+    padding: 10px 16px 0;
   }
-  .titlebar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-  h1 { margin: 0; font-size: 17px; }
+  .titlebar { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+  header.on-home .lockup { visibility: hidden; }
+  .titlebar .lockup { flex: 1; min-width: 0; }
+  .titlebar .brand {
+    font-size: 13px; font-weight: 800; letter-spacing: .02em; color: var(--accent);
+  }
+  h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
   .counts { font-size: 13px; color: var(--muted); white-space: nowrap; }
   .counts .flag { color: var(--urgent); font-weight: 700; }
+  #refresh {
+    flex: 0 0 auto; width: 44px; height: 44px;
+    font: inherit; font-size: 17px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--card); color: var(--accent); cursor: pointer;
+  }
+  #subbar:empty { display: none; }
 
-  /* Horizontally scrolling filter chips — the one place sideways movement helps. */
   .filters {
     display: flex; gap: 8px;
     overflow-x: auto;
-    padding: 10px 0;
+    padding: 10px 16px;
     margin: 0 -16px;
-    padding-left: 16px; padding-right: 16px;
     scrollbar-width: none;
   }
   .filters::-webkit-scrollbar { display: none; }
@@ -52,70 +85,152 @@
     display: inline-flex; align-items: center;
     min-height: 44px;              /* thumb-sized, per Apple's touch guidance */
     font: inherit; font-size: 14px;
-    padding: 0 16px;
-    border-radius: 999px;
+    padding: 0 14px;
+    border-radius: var(--radius);
     border: 1px solid var(--line);
-    background: #fff;
+    background: var(--card);
     color: var(--ink);
     cursor: pointer;
   }
-  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .chip[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+  }
 
-  main { padding: 14px 16px 90px; }
+  .searchrow { padding: 10px 0 12px; position: relative; }
+  #search {
+    width: 100%; font: inherit; font-size: 16px;   /* 16px stops iOS zooming on focus */
+    min-height: 44px; padding: 10px 44px 10px 13px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--card); color: inherit;
+  }
+  #clearSearch {
+    position: absolute; right: 2px; top: 10px;
+    width: 44px; height: 44px;
+    border: none; background: none; color: var(--muted);
+    font: inherit; font-size: 20px; cursor: pointer;
+  }
 
+  main { padding: 16px 16px calc(88px + env(safe-area-inset-bottom)); }
+
+  /* ---- home ---- */
+  .lockup-big { text-align: center; padding: 18px 0 22px; }
+  .lockup-big .wordmark {
+    font-size: 40px; font-weight: 800; letter-spacing: -.025em;
+    color: var(--accent); line-height: 1;
+  }
+  .lockup-big .rule {
+    width: 46px; height: 3px; background: var(--accent);
+    margin: 13px auto 11px; border-radius: 2px;
+  }
+  .lockup-big .sub { font-size: 12px; letter-spacing: .13em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; }
+
+  .scanned {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px;
+  }
+  .scanned .what { flex: 1; min-width: 0; }
+  .scanned .name { font-weight: 700; font-size: 16px; }
+  .scanned button {
+    flex: 0 0 auto; min-height: 40px; padding: 0 12px;
+    font: inherit; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--card); color: var(--muted); cursor: pointer;
+  }
+
+  .glance { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px;
+    background: var(--line); border: 1px solid var(--line);
+    border-radius: var(--radius); overflow: hidden; margin-bottom: 14px; }
+  .glance div { background: var(--card); padding: 14px 12px; text-align: center; }
+  .glance .v { font-size: 26px; font-weight: 800; line-height: 1.05; }
+  .glance .k { font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; margin-top: 4px; }
+  .glance .alert .v { color: var(--urgent); }
+
+  /* ---- request cards ---- */
   .card {
-    background: #fff;
+    background: var(--card);
     border: 1px solid var(--line);
-    border-left: 4px solid var(--line);
-    border-radius: 12px;
+    border-left: 3px solid var(--line);
+    border-radius: var(--radius);
     padding: 14px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   .card.is-urgent { border-left-color: var(--urgent); }
-  .card.is-done { opacity: .62; }
+  .card.is-done { opacity: .6; }
 
   .card .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
-  .card .equipment { font-weight: 700; font-size: 17px; }
-  .card .ticket { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .card .equipment { font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
+  .card .ticket { font-size: 12px; color: var(--muted); }
   .badge {
-    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+    font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em;
+    padding: 4px 7px; border-radius: 3px; white-space: nowrap;
   }
   .badge.urgent { background: var(--urgent-bg); color: var(--urgent); }
-  .badge.status { background: #eef1ef; color: var(--muted); }
-  .badge.status[data-status="Open"] { background: #fdecc8; color: #7a4f01; }
-  .badge.status[data-status="In progress"] { background: #d6e4f7; color: #1c3d69; }
-  .badge.status[data-status="Waiting on parts"] { background: #f0e0f5; color: #5b2d6e; }
-  .badge.status[data-status="Done"] { background: #dff0e2; color: #1e5128; }
+  .badge.status { background: var(--line-2); color: var(--ink-2); }
+  .badge.status[data-status="Open"] { background: #fbeccd; color: #6f4703; }
+  .badge.status[data-status="In progress"] { background: #d9e6f6; color: #1b3d67; }
+  .badge.status[data-status="Waiting on parts"] { background: #ece0f2; color: #552f68; }
+  .badge.status[data-status="Done"] { background: #dceee1; color: #1c4c2f; }
 
   .card .problem { margin: 9px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .card .meta { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .card .done-notes {
+    margin-top: 10px; padding: 10px 12px;
+    background: var(--bg); border-radius: var(--radius);
+    font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .card .done-notes b { display: block; font-size: 10px; color: var(--muted); font-weight: 800;
+    text-transform: uppercase; letter-spacing: .07em; margin-bottom: 4px; }
+  .card .photo { display: inline-block; margin-top: 10px; font-size: 14px;
+    font-weight: 600; color: var(--accent); }
 
-  .card details { margin-top: 12px; }
+  .card details { margin-top: 10px; }
   .card summary {
-    cursor: pointer; font-size: 15px; font-weight: 600; color: var(--accent);
+    cursor: pointer; font-size: 14px; font-weight: 700; color: var(--accent);
     display: flex; align-items: center; min-height: 44px;
-    list-style: none;
+    list-style: none; text-transform: uppercase; letter-spacing: .06em;
   }
   .card summary::-webkit-details-marker { display: none; }
-  .card summary::after { content: " ›"; }
-  .card details[open] summary::after { content: " ⌄"; }
+  .card summary::after { content: " +"; }
+  .card details[open] summary::after { content: " −"; }
 
-  label.field { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 5px; }
-  select, textarea {
-    width: 100%; font: inherit; font-size: 16px; /* 16px stops iOS zooming on focus */
-    padding: 11px; border: 1px solid var(--line); border-radius: 8px;
-    background: #fff; color: inherit;
+  label.field { display: block; font-size: 11px; font-weight: 700; margin: 14px 0 5px;
+    text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  label.field .req { color: var(--urgent); }
+  select, textarea, input[type=text] {
+    width: 100%; font: inherit; font-size: 16px;
+    padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--card); color: inherit;
   }
-  textarea { min-height: 76px; resize: vertical; }
+  textarea { min-height: 92px; resize: vertical; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 5px; }
 
-  button.save {
-    margin-top: 12px; width: 100%;
+  button.primary, a.primary {
+    display: block; width: 100%; text-align: center; text-decoration: none;
     font: inherit; font-weight: 700; font-size: 16px;
-    padding: 13px; border-radius: 8px; border: none;
+    min-height: 52px; padding: 15px; border-radius: var(--radius); border: none;
     background: var(--accent); color: #fff; cursor: pointer;
+    letter-spacing: .01em;
   }
-  button.save:disabled { opacity: .5; }
+  button.primary:disabled { opacity: .55; }
+  button.secondary {
+    display: block; width: 100%; margin-top: 10px;
+    font: inherit; font-weight: 600; font-size: 15px;
+    min-height: 48px; padding: 12px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--card); color: var(--ink-2); cursor: pointer;
+  }
+  button.save { margin-top: 12px; }
+  button.more {
+    display: block; width: 100%; margin-top: 4px;
+    font: inherit; font-weight: 600; font-size: 15px;
+    min-height: 44px; padding: 12px;
+    border: 1px solid var(--accent); border-radius: var(--radius);
+    background: var(--card); color: var(--accent); cursor: pointer;
+  }
 
   .rowmsg { font-size: 13px; margin-top: 8px; min-height: 18px; }
   .rowmsg.ok { color: var(--accent); }
@@ -123,120 +238,666 @@
 
   .empty, .loading { text-align: center; color: var(--muted); padding: 44px 20px; }
   .trimmed { text-align: center; color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+  .resultcount { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
 
-  .fab {
-    position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
-    display: flex; gap: 10px;
+  /* ---- create ticket ---- */
+  .formcard {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 4px 16px 18px;
   }
-  .fab a, .fab button {
-    flex: 1; text-align: center; text-decoration: none;
-    font: inherit; font-weight: 700; font-size: 15px;
-    padding: 14px; border-radius: 10px; border: 1px solid var(--accent);
-    background: var(--accent); color: #fff; cursor: pointer;
-    box-shadow: 0 3px 10px rgba(0,0,0,.16);
+  .formcard .first { margin-top: 14px; }
+  .formerr {
+    background: var(--urgent-bg); color: var(--urgent);
+    border-radius: var(--radius); padding: 11px 13px; margin: 14px 0 0;
+    font-size: 14px; font-weight: 600;
   }
-  .fab button.ghost { background: #fff; color: var(--accent); flex: 0 0 auto; padding: 14px 18px; }
+  .photorow { display: flex; align-items: center; gap: 10px; }
+  .photorow label.file {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    min-height: 48px; padding: 12px; margin: 0;
+    border: 1px dashed var(--line); border-radius: var(--radius);
+    color: var(--accent); font-weight: 600; font-size: 15px; cursor: pointer;
+    text-transform: none; letter-spacing: 0;
+  }
+  .photorow input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .photoprev { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+  .photoprev img { width: 62px; height: 62px; object-fit: cover; border-radius: var(--radius);
+    border: 1px solid var(--line); }
+  .photoprev .pname { flex: 1; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  .photoprev button {
+    min-height: 40px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--card); color: var(--muted); cursor: pointer;
+  }
+
+  .done-panel { text-align: center; padding: 26px 16px; background: var(--card);
+    border: 1px solid var(--line); border-radius: var(--radius); }
+  .done-panel .tick { font-size: 40px; line-height: 1; color: var(--accent); }
+  .done-panel h2 { margin: 12px 0 4px; font-size: 20px; }
+  .done-panel .num { font-weight: 800; }
+  .done-panel p { color: var(--muted); margin: 0 0 18px; }
+
+  /* ---- dashboard ---- */
+  .panel {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 10px;
+  }
+  .panel h2 { margin: 0 0 2px; font-size: 11px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .panel .caption { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .tile .value { font-size: 30px; font-weight: 800; line-height: 1.05; }
+  .tile .name { font-size: 11px; color: var(--muted); margin-top: 3px;
+    text-transform: uppercase; letter-spacing: .07em; font-weight: 700; }
+  .tile.alert .value { color: var(--urgent); }
+
+  .oldest { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 14px; }
+  .oldest .lead { margin-bottom: 5px; }
+
+  .barrow { margin-bottom: 12px; }
+  .barrow:last-child { margin-bottom: 0; }
+  .barrow .barhead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 10px; margin-bottom: 5px;
+  }
+  .barrow .barname { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+  .barrow .barval { font-size: 14px; font-weight: 700; white-space: nowrap; }
+  .barrow .barsub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .track { background: var(--track); border-radius: 2px; height: 10px; overflow: hidden; }
+  .fill {
+    height: 100%;
+    border-radius: 0 3px 3px 0;   /* square at the baseline, rounded at the data end */
+    background: var(--data-count);
+  }
+  .fill.down { background: var(--data-down); }
+
+  .downlist, .statuslist { list-style: none; margin: 0; padding: 0; }
+  .downlist li {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--line-2); font-size: 14px;
+  }
+  .downlist li:last-child { border-bottom: none; padding-bottom: 0; }
+  .downlist .days { font-weight: 700; white-space: nowrap; }
+  .downlist .tk { font-size: 12px; color: var(--muted); }
+  .statuslist { font-size: 14px; }
+  .statuslist li { display: flex; justify-content: space-between; padding: 7px 0; }
+  .statuslist .n { font-weight: 700; }
+
+  .stamp { text-align: center; font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+
+  /* ---- bottom tab bar ---- */
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex;
+    background: var(--card);
+    border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tabbar button {
+    flex: 1; min-height: 58px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font: inherit; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em;
+    border: none; border-top: 2px solid transparent; background: none;
+    color: var(--muted); cursor: pointer;
+  }
+  .tabbar button .ico { font-size: 17px; line-height: 1; }
+  .tabbar button[aria-selected="true"] { color: var(--accent); border-top-color: var(--accent); }
+  .tabbar button .dot {
+    display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 4px;
+    background: var(--urgent); color: #fff; border-radius: 8px;
+    font-size: 10px; font-weight: 700; line-height: 16px;
+  }
 
   @media (prefers-color-scheme: dark) {
-    :root { --ink: #e8ebe9; --muted: #9aa5a1; --line: #333b38; --bg: #141817; --urgent-bg: #4a201a; --urgent: #f0a396; }
-    header, .card, select, textarea, .chip, .fab button.ghost { background: #1e2422; }
-    .badge.status { background: #2a3230; }
+    :root {
+      --ink: #e7ebe8; --ink-2: #b9c2bd; --muted: #949e99;
+      --line: #333a36; --line-2: #262d2a; --bg: #121614; --card: #1b201e;
+      --accent: #5bab7f; --accent-ink: #8fcaa8;
+      --urgent: #f0a396; --urgent-bg: #46201a;
+      --data-count: #3987e5; --data-down: #d95926; --track: #2a312e;
+    }
+    .badge.status[data-status="Open"] { background: #4a3a12; color: #f4d391; }
+    .badge.status[data-status="In progress"] { background: #1d3352; color: #b9d3f2; }
+    .badge.status[data-status="Waiting on parts"] { background: #3b2748; color: #dcc0ea; }
+    .badge.status[data-status="Done"] { background: #1e3f2a; color: #a9d9ba; }
   }
 </style>
 
+<!-- doGet bakes the scanned machine in here; the page runs in a sandboxed
+     iframe and cannot read the address bar itself. -->
+<div id="boot" data-scanned="<?= scannedEquipment ?>" hidden></div>
+
 <header>
   <div class="titlebar">
-    <h1>Equipment Maintenance</h1>
-    <div class="counts" id="counts"></div>
+    <div class="lockup">
+      <div class="brand">Millcreek</div>
+      <h1 id="title">Equipment Maintenance</h1>
+    </div>
+    <div class="counts num" id="counts"></div>
+    <button id="refresh" type="button" aria-label="Refresh">↻</button>
   </div>
-  <div class="filters" id="filters"></div>
+  <div id="subbar"></div>
 </header>
 
-<main id="list"><div class="loading">Loading requests…</div></main>
+<main id="view"><div class="loading">Loading…</div></main>
 
-<div class="fab">
-  <a id="newRequest" href="#" hidden>New request</a>
-  <button class="ghost" id="refresh" type="button" aria-label="Refresh">↻</button>
-</div>
+<nav class="tabbar" role="tablist">
+  <button type="button" role="tab" data-tab="home" aria-selected="true">
+    <span class="ico" aria-hidden="true">⌂</span><span>Home</span>
+  </button>
+  <button type="button" role="tab" data-tab="open" aria-selected="false">
+    <span class="ico" aria-hidden="true">◉</span><span>Open<span class="dot num" id="openDot" hidden></span></span>
+  </button>
+  <button type="button" role="tab" data-tab="history" aria-selected="false">
+    <span class="ico" aria-hidden="true">≡</span><span>History</span>
+  </button>
+  <button type="button" role="tab" data-tab="dashboard" aria-selected="false">
+    <span class="ico" aria-hidden="true">▦</span><span>Dashboard</span>
+  </button>
+</nav>
 
 <script>
 (function () {
   'use strict';
 
-  var state = { data: null, equipment: 'All', onlyOpen: true };
-  var listEl = document.getElementById('list');
   var CLOSED = ['Done', 'Not needed'];
+  var PAGE = 25;
+  var NAME_KEY = 'millcreek.reporter';
+
+  // The scanned machine, baked in by doGet. If the template was not rendered
+  // (opened as a plain file) the attribute still holds the raw scriptlet, so
+  // anything with a "<" in it is treated as absent.
+  var bootEl = document.getElementById('boot');
+  var SCANNED = (bootEl && bootEl.dataset.scanned) || '';
+  if (SCANNED.indexOf('<') !== -1) SCANNED = '';
+
+  var state = {
+    tab: 'home',
+    scanned: SCANNED,
+    options: null,
+    open: { data: null, equipment: 'All', onlyOpen: true, error: '' },
+    history: {
+      query: '', equipment: 'All', requests: [], total: 0, hasMore: false,
+      equipmentList: [], loaded: false, loading: false, error: ''
+    },
+    dashboard: { data: null, loaded: false, error: '' },
+    create: { open: false, submitting: false, error: '', done: null, photo: null }
+  };
+
+  var tokens = { history: 0 };
+
+  var viewEl = document.getElementById('view');
+  var subbarEl = document.getElementById('subbar');
+  var countsEl = document.getElementById('counts');
+  var titleEl = document.getElementById('title');
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
   }
-
   function isClosed(r) { return CLOSED.indexOf(r.status) !== -1; }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  function errText(err) { return (err && err.message) ? err.message : String(err || 'Something went wrong.'); }
 
-  function load() {
-    listEl.innerHTML = '<div class="loading">Loading requests…</div>';
+  function remembered(key) {
+    try { return window.localStorage.getItem(key) || ''; } catch (e) { return ''; }
+  }
+  function remember(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* private mode */ }
+  }
+
+  // ======================================================================
+  // Loading
+  // ======================================================================
+
+  function loadOptions() {
     google.script.run
-      .withSuccessHandler(function (data) { state.data = data; showFormLink(data.formUrl); render(); })
+      .withSuccessHandler(function (opts) {
+        state.options = opts;
+        if (state.create.open) render();
+      })
+      .withFailureHandler(function () { /* Create Ticket reports it when opened */ })
+      .getFormOptions();
+  }
+
+  function loadOpen() {
+    state.open.error = '';
+    google.script.run
+      .withSuccessHandler(function (data) {
+        state.open.data = data;
+        renderTabBadge();
+        if (state.tab === 'open' || state.tab === 'home') render();
+      })
       .withFailureHandler(function (err) {
-        listEl.innerHTML = '<div class="empty">Could not load the log.<br>' +
-          esc(err && err.message ? err.message : err) + '</div>';
+        state.open.error = errText(err);
+        if (state.tab === 'open' || state.tab === 'home') render();
       })
       .getRequests();
   }
 
-  function visible() {
-    var all = state.data.requests;
-    return all.filter(function (r) {
-      if (state.equipment !== 'All' && r.equipment !== state.equipment) return false;
-      if (state.onlyOpen && isClosed(r)) return false;
+  // ======================================================================
+  // Home
+  // ======================================================================
+
+  function renderHome() {
+    subbarEl.innerHTML = '';
+    countsEl.textContent = '';
+
+    var html =
+      '<div class="lockup-big">' +
+        '<div class="wordmark">Millcreek</div>' +
+        '<div class="rule"></div>' +
+        '<div class="sub">Equipment Maintenance</div>' +
+      '</div>';
+
+    if (state.scanned) {
+      html += '<div class="scanned">' +
+          '<div class="what"><div class="eyebrow">Scanned</div>' +
+            '<div class="name">' + esc(state.scanned) + '</div></div>' +
+          '<button type="button" id="clearScanned">Change</button>' +
+        '</div>';
+    }
+
+    html += '<button class="primary" type="button" id="createBtn">Create ticket</button>';
+
+    if (state.open.error) {
+      html += '<p class="trimmed">Could not load the log. ' + esc(state.open.error) + '</p>';
+    } else if (!state.open.data) {
+      html += '<div class="loading">Loading…</div>';
+    } else {
+      var all = state.open.data.requests;
+      var open = all.filter(function (r) { return !isClosed(r); });
+      var urgent = open.filter(function (r) { return r.urgent; });
+      var mine = state.scanned
+        ? open.filter(function (r) { return r.equipment === state.scanned; })
+        : [];
+
+      html += '<div class="glance">' +
+          '<div><div class="v num">' + open.length + '</div><div class="k">Open</div></div>' +
+          '<div class="' + (urgent.length ? 'alert' : '') + '"><div class="v num">' + urgent.length +
+            '</div><div class="k">Urgent</div></div>' +
+        '</div>';
+
+      if (state.scanned) {
+        html += '<div class="eyebrow" style="margin:18px 0 8px">Open on this ' +
+          esc(state.scanned) + '</div>';
+        html += mine.length
+          ? mine.map(function (r) { return cardHtml(r, false); }).join('')
+          : '<p class="trimmed" style="text-align:left">Nothing open against it.</p>';
+      } else if (urgent.length) {
+        html += '<div class="eyebrow" style="margin:18px 0 8px">Needs attention now</div>' +
+          urgent.map(function (r) { return cardHtml(r, false); }).join('');
+      }
+    }
+
+    viewEl.innerHTML = html;
+
+    document.getElementById('createBtn').addEventListener('click', function () {
+      openCreate();
+    });
+    var clear = document.getElementById('clearScanned');
+    if (clear) {
+      clear.addEventListener('click', function () { state.scanned = ''; render(); });
+    }
+  }
+
+  // ======================================================================
+  // Create ticket
+  // ======================================================================
+
+  function openCreate() {
+    state.create.open = true;
+    state.create.error = '';
+    state.create.done = null;
+    state.create.photo = null;
+    render();
+  }
+
+  function closeCreate() {
+    state.create.open = false;
+    state.create.photo = null;
+    render();
+  }
+
+  function renderCreate() {
+    subbarEl.innerHTML = '';
+    countsEl.textContent = '';
+    titleEl.textContent = 'Create ticket';
+
+    var done = state.create.done;
+    if (done) {
+      viewEl.innerHTML =
+        '<div class="done-panel">' +
+          '<div class="tick" aria-hidden="true">✓</div>' +
+          '<h2>Ticket <span class="num">' + esc(done.ticket) + '</span></h2>' +
+          '<p>The Facilities Lead, the Owner and your leadership contact have been emailed.</p>' +
+          '<button class="primary" type="button" id="againBtn">Report something else</button>' +
+          '<button class="secondary" type="button" id="doneBtn">Done</button>' +
+        '</div>';
+      document.getElementById('againBtn').addEventListener('click', openCreate);
+      document.getElementById('doneBtn').addEventListener('click', function () {
+        closeCreate();
+        selectTab('home');
+      });
+      return;
+    }
+
+    var opts = state.options;
+    if (!opts) {
+      viewEl.innerHTML = '<div class="loading">Loading the form…</div>' +
+        '<button class="secondary" type="button" id="cancelBtn">Cancel</button>';
+      document.getElementById('cancelBtn').addEventListener('click', closeCreate);
+      return;
+    }
+
+    var chosen = state.scanned && opts.equipment.indexOf(state.scanned) !== -1 ? state.scanned : '';
+    var name = remembered(NAME_KEY);
+
+    function optionList(values, selected) {
+      return values.map(function (v) {
+        return '<option value="' + esc(v) + '"' + (v === selected ? ' selected' : '') + '>' +
+          esc(v) + '</option>';
+      }).join('');
+    }
+
+    viewEl.innerHTML =
+      '<div class="formcard">' +
+        (state.create.error ? '<div class="formerr">' + esc(state.create.error) + '</div>' : '') +
+
+        '<label class="field first" for="fEquip">Equipment <span class="req">*</span></label>' +
+        '<select id="fEquip">' +
+          '<option value="">Choose…</option>' + optionList(opts.equipment, chosen) +
+        '</select>' +
+
+        '<div id="itemWrap" hidden>' +
+          '<label class="field" for="fItem">' + esc(opts.itemQuestion || 'Which item, and where is it?') +
+            ' <span class="req">*</span></label>' +
+          '<input type="text" id="fItem" placeholder="Step ladder, Greenhouse 3">' +
+          '<div class="hint">One code covers all the small stuff, so say which one and where.</div>' +
+        '</div>' +
+
+        '<label class="field" for="fPriority">How urgent is it? <span class="req">*</span></label>' +
+        '<select id="fPriority">' +
+          '<option value="">Choose…</option>' + optionList(opts.urgency, '') +
+        '</select>' +
+
+        '<label class="field" for="fProblem">What needs attention? <span class="req">*</span></label>' +
+        '<textarea id="fProblem" placeholder="What is wrong, and anything you noticed"></textarea>' +
+
+        '<label class="field" for="fName">Your name <span class="req">*</span></label>' +
+        '<input type="text" id="fName" value="' + esc(name) + '" placeholder="Who to ask if it needs following up">' +
+
+        '<label class="field" for="fLead">Leadership Team contact</label>' +
+        '<select id="fLead">' + optionList(opts.leadership, 'Any / no preference') + '</select>' +
+
+        '<label class="field">Photo</label>' +
+        '<div class="photorow">' +
+          '<label class="file" for="fPhoto">Add a photo' +
+            '<input type="file" id="fPhoto" accept="image/*" capture="environment">' +
+          '</label>' +
+        '</div>' +
+        '<div id="photoPrev"></div>' +
+
+        '<div style="margin-top:22px">' +
+          '<button class="primary" type="button" id="submitBtn">Submit ticket</button>' +
+          '<button class="secondary" type="button" id="cancelBtn">Cancel</button>' +
+        '</div>' +
+      '</div>';
+
+    var equip = document.getElementById('fEquip');
+    var itemWrap = document.getElementById('itemWrap');
+    function syncItem() {
+      itemWrap.hidden = !(opts.generalEquipment && equip.value === opts.generalEquipment);
+    }
+    equip.addEventListener('change', syncItem);
+    syncItem();
+
+    document.getElementById('fPhoto').addEventListener('change', onPhotoChosen);
+    document.getElementById('cancelBtn').addEventListener('click', closeCreate);
+    document.getElementById('submitBtn').addEventListener('click', submitCreate);
+  }
+
+  /**
+   * Shrink the picture before it leaves the phone. A modern camera file is
+   * several megabytes, and this gets sent over farm signal.
+   */
+  function onPhotoChosen(event) {
+    var file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        var max = 1600;
+        var scale = Math.min(1, max / Math.max(img.width, img.height));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        var dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        state.create.photo = {
+          data: dataUrl.split(',')[1],
+          mimeType: 'image/jpeg',
+          name: file.name,
+          preview: dataUrl,
+          kb: Math.round((dataUrl.length * 3 / 4) / 1024)
+        };
+        showPhotoPreview();
+      };
+      img.onerror = function () {
+        state.create.error = 'That file did not look like a photo.';
+        render();
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function showPhotoPreview() {
+    var wrap = document.getElementById('photoPrev');
+    if (!wrap) return;
+    var photo = state.create.photo;
+    if (!photo) { wrap.innerHTML = ''; return; }
+
+    wrap.innerHTML = '<div class="photoprev">' +
+      '<img src="' + photo.preview + '" alt="">' +
+      '<span class="pname">' + esc(photo.name) + ' · ' + photo.kb + ' KB</span>' +
+      '<button type="button" id="dropPhoto">Remove</button>' +
+    '</div>';
+    document.getElementById('dropPhoto').addEventListener('click', function () {
+      state.create.photo = null;
+      var input = document.getElementById('fPhoto');
+      if (input) input.value = '';
+      showPhotoPreview();
+    });
+  }
+
+  function submitCreate() {
+    if (state.create.submitting) return;
+
+    var payload = {
+      equipment: document.getElementById('fEquip').value,
+      item: (document.getElementById('fItem') || {}).value || '',
+      priority: document.getElementById('fPriority').value,
+      problem: document.getElementById('fProblem').value,
+      reportedBy: document.getElementById('fName').value.trim(),
+      leadership: document.getElementById('fLead').value,
+      photo: state.create.photo
+        ? { data: state.create.photo.data, mimeType: state.create.photo.mimeType }
+        : null
+    };
+
+    // Say what is missing before spending a round trip on it.
+    var missing = !payload.equipment ? 'Choose which equipment this is about.'
+      : !payload.priority ? 'Choose how urgent it is.'
+      : !payload.problem.trim() ? 'Describe what needs attention.'
+      : !payload.reportedBy ? 'Add your name so someone can follow up.'
+      : (state.options.generalEquipment && payload.equipment === state.options.generalEquipment
+          && !payload.item.trim())
+        ? 'Say which item it is and where.'
+        : '';
+    if (missing) {
+      state.create.error = missing;
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
+
+    remember(NAME_KEY, payload.reportedBy);
+
+    state.create.submitting = true;
+    state.create.error = '';
+    var btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = state.create.photo ? 'Sending photo…' : 'Submitting…';
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        state.create.submitting = false;
+        state.create.done = result;
+        state.create.photo = null;
+        // Everything downstream is now out of date.
+        state.dashboard.loaded = false;
+        state.history.loaded = false;
+        loadOpen();
+        render();
+      })
+      .withFailureHandler(function (err) {
+        state.create.submitting = false;
+        state.create.error = errText(err);
+        render();
+        window.scrollTo(0, 0);
+      })
+      .createRequest(payload);
+  }
+
+  // ======================================================================
+  // Open tab
+  // ======================================================================
+
+  function openVisible() {
+    return state.open.data.requests.filter(function (r) {
+      if (state.open.equipment !== 'All' && r.equipment !== state.open.equipment) return false;
+      if (state.open.onlyOpen && isClosed(r)) return false;
       return true;
     });
   }
 
-  function renderFilters() {
-    var wrap = document.getElementById('filters');
-    var chips = [
-      { key: 'open', label: state.onlyOpen ? 'Open only' : 'All statuses', toggle: true }
-    ];
-    ['All'].concat(state.data.equipmentList).forEach(function (v) {
-      chips.push({ key: 'v:' + v, label: v, pressed: state.equipment === v });
+  function renderOpenSubbar() {
+    var data = state.open.data;
+    var chips = [{ key: 'open', label: state.open.onlyOpen ? 'Open only' : 'All statuses', pressed: state.open.onlyOpen }];
+    ['All'].concat(data.equipmentList).forEach(function (name) {
+      chips.push({ key: 'e:' + name, label: name, pressed: state.open.equipment === name });
     });
 
-    wrap.innerHTML = chips.map(function (c) {
-      return '<button class="chip" type="button" data-key="' + esc(c.key) + '" aria-pressed="' +
-        (c.toggle ? state.onlyOpen : !!c.pressed) + '">' + esc(c.label) + '</button>';
-    }).join('');
+    subbarEl.innerHTML = '<div class="filters">' + chips.map(function (c) {
+      return '<button class="chip" type="button" data-key="' + esc(c.key) +
+        '" aria-pressed="' + !!c.pressed + '">' + esc(c.label) + '</button>';
+    }).join('') + '</div>';
 
-    wrap.querySelectorAll('.chip').forEach(function (btn) {
+    subbarEl.querySelectorAll('.chip').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var key = btn.dataset.key;
-        if (key === 'open') state.onlyOpen = !state.onlyOpen;
-        else state.equipment = key.slice(2);
+        if (key === 'open') state.open.onlyOpen = !state.open.onlyOpen;
+        else state.open.equipment = key.slice(2);
         render();
       });
     });
   }
 
-  function renderCounts() {
-    var open = state.data.requests.filter(function (r) { return !isClosed(r); });
-    var urgent = open.filter(function (r) { return r.urgent; }).length;
-    document.getElementById('counts').innerHTML =
-      open.length + ' open' + (urgent ? ' · <span class="flag">' + urgent + ' urgent</span>' : '');
+  function renderOpen() {
+    if (state.open.error) {
+      subbarEl.innerHTML = '';
+      viewEl.innerHTML = '<div class="empty">Could not load the log.<br>' + esc(state.open.error) + '</div>';
+      return;
+    }
+    if (!state.open.data) {
+      viewEl.innerHTML = '<div class="loading">Loading requests…</div>';
+      return;
+    }
+
+    var data = state.open.data;
+    renderOpenSubbar();
+    updateCounts();
+
+    var items = openVisible();
+    var html = '';
+
+    if (!items.length) {
+      html += '<div class="empty">' + (state.open.onlyOpen ? 'Nothing open' : 'Nothing logged') +
+        (state.open.equipment === 'All' ? '.' : ' for the ' + esc(state.open.equipment) + '.') + '</div>';
+    } else {
+      html += items.map(function (r) { return cardHtml(r, true); }).join('');
+      if (!state.open.onlyOpen && data.closedHidden) {
+        html += '<p class="trimmed">' + plural(data.closedHidden, 'older closed request') +
+          ' not shown here — use History to search them.</p>';
+      }
+    }
+
+    viewEl.innerHTML = html;
+    viewEl.querySelectorAll('.save').forEach(function (btn) {
+      btn.addEventListener('click', function () { save(btn); });
+    });
   }
 
-  function cardHtml(r) {
-    var statuses = state.data.statuses.map(function (s) {
-      return '<option value="' + esc(s) + '"' + (s === r.status ? ' selected' : '') + '>' + esc(s) + '</option>';
-    }).join('');
+  function updateCounts() {
+    if (!state.open.data) { countsEl.textContent = ''; return; }
+    var open = state.open.data.requests.filter(function (r) { return !isClosed(r); });
+    var urgent = open.filter(function (r) { return r.urgent; }).length;
+    countsEl.innerHTML = open.length + ' open' +
+      (urgent ? ' · <span class="flag">' + urgent + ' urgent</span>' : '');
+  }
+
+  function renderTabBadge() {
+    var dot = document.getElementById('openDot');
+    if (!state.open.data) { dot.hidden = true; return; }
+    var urgent = state.open.data.requests.filter(function (r) { return !isClosed(r) && r.urgent; }).length;
+    dot.hidden = urgent === 0;
+    dot.textContent = urgent;
+  }
+
+  // ======================================================================
+  // Cards
+  // ======================================================================
+
+  function cardHtml(r, editable) {
+    var statuses = (state.open.data ? state.open.data.statuses : [])
+      .map(function (s) {
+        return '<option value="' + esc(s) + '"' + (s === r.status ? ' selected' : '') + '>' + esc(s) + '</option>';
+      }).join('');
+
+    var extra = '';
+    if (r.photo) {
+      extra += '<a class="photo" href="' + esc(r.photo) + '" target="_blank" rel="noopener">View photo</a>';
+    }
+
+    var controls = editable
+      ? '<details>' +
+          '<summary>Update</summary>' +
+          '<label class="field" for="s' + r.row + '">Status</label>' +
+          '<select id="s' + r.row + '" class="status-select">' + statuses + '</select>' +
+          '<label class="field" for="n' + r.row + '">Work done / notes</label>' +
+          '<textarea id="n' + r.row + '" class="notes" placeholder="What was done, parts used, who did it">' +
+            esc(r.notes) + '</textarea>' +
+          '<button class="primary save" type="button">Save</button>' +
+          '<div class="rowmsg" role="status"></div>' +
+        '</details>'
+      : (r.notes
+          ? '<div class="done-notes"><b>Work done</b>' + esc(r.notes) + '</div>'
+          : '');
 
     return '<article class="card' + (r.urgent && !isClosed(r) ? ' is-urgent' : '') +
       (isClosed(r) ? ' is-done' : '') + '" data-row="' + r.row + '">' +
         '<div class="top">' +
           '<div>' +
             '<div class="equipment">' + esc(r.label || r.equipment || 'Equipment not given') + '</div>' +
-            '<div class="ticket">' + esc(r.ticket || '—') + ' · ' + esc(r.when) + '</div>' +
+            '<div class="ticket num">' + esc(r.ticket || '—') + ' · ' + esc(r.when) +
+              (isClosed(r) && r.closedWhen ? ' · closed ' + esc(r.closedWhen) : '') + '</div>' +
           '</div>' +
           '<div>' +
             (r.urgent && !isClosed(r) ? '<span class="badge urgent">Urgent</span> ' : '') +
@@ -246,46 +907,15 @@
         '<p class="problem">' + esc(r.problem || '(no description)') + '</p>' +
         '<div class="meta">' + esc(r.priority || '') +
           (r.reportedBy ? ' · reported by ' + esc(r.reportedBy) : '') + '</div>' +
-        '<details>' +
-          '<summary>Update</summary>' +
-          '<label class="field" for="s' + r.row + '">Status</label>' +
-          '<select id="s' + r.row + '" class="status-select">' + statuses + '</select>' +
-          '<label class="field" for="n' + r.row + '">Work done / notes</label>' +
-          '<textarea id="n' + r.row + '" class="notes" placeholder="What was done, parts used, who did it">' +
-            esc(r.notes) + '</textarea>' +
-          '<button class="save" type="button">Save</button>' +
-          '<div class="rowmsg" role="status"></div>' +
-        '</details>' +
+        extra +
+        controls +
       '</article>';
-  }
-
-  function render() {
-    renderFilters();
-    renderCounts();
-
-    var items = visible();
-    if (!items.length) {
-      listEl.innerHTML = '<div class="empty">' +
-        (state.onlyOpen ? 'Nothing open' : 'Nothing logged') +
-        (state.equipment === 'All' ? '.' : ' for the ' + esc(state.equipment) + '.') +
-        '</div>';
-      return;
-    }
-    listEl.innerHTML = items.map(cardHtml).join('') +
-      (!state.onlyOpen && state.data.closedHidden
-        ? '<p class="trimmed">' + state.data.closedHidden +
-          ' older closed request' + (state.data.closedHidden === 1 ? '' : 's') +
-          ' not shown. The full history is in the sheet.</p>'
-        : '');
-    listEl.querySelectorAll('.save').forEach(function (btn) {
-      btn.addEventListener('click', function () { save(btn); });
-    });
   }
 
   function save(btn) {
     var card = btn.closest('.card');
     var row = Number(card.dataset.row);
-    var record = state.data.requests.filter(function (r) { return r.row === row; })[0];
+    var record = state.open.data.requests.filter(function (r) { return r.row === row; })[0];
     var msg = card.querySelector('.rowmsg');
     var status = card.querySelector('.status-select').value;
     var notes = card.querySelector('.notes').value;
@@ -304,6 +934,7 @@
         btn.textContent = 'Save';
         msg.className = 'rowmsg ok';
         msg.textContent = 'Saved.';
+
         var closed = CLOSED.indexOf(status) !== -1;
         card.querySelector('.badge.status').textContent = status;
         card.querySelector('.badge.status').dataset.status = status;
@@ -312,27 +943,329 @@
         // A closed request is no longer urgent, whatever it was reported as.
         var urgentBadge = card.querySelector('.badge.urgent');
         if (urgentBadge) urgentBadge.hidden = closed;
-        renderCounts();
+
+        updateCounts();
+        renderTabBadge();
+        state.dashboard.loaded = false;
+        state.history.loaded = false;
       })
       .withFailureHandler(function (err) {
         btn.disabled = false;
         btn.textContent = 'Save';
         msg.className = 'rowmsg err';
-        msg.textContent = (err && err.message) ? err.message : 'Could not save. Try again.';
+        msg.textContent = errText(err);
       })
       .updateRequest({ row: row, ticket: record.ticket, status: status, notes: notes });
   }
 
-  function showFormLink(url) {
-    if (!url) return;
-    var link = document.getElementById('newRequest');
-    link.href = url;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.hidden = false;
+  // ======================================================================
+  // History tab
+  // ======================================================================
+
+  var searchTimer = null;
+
+  function renderHistorySubbar() {
+    var h = state.history;
+    var names = ['All'].concat(h.equipmentList.length
+      ? h.equipmentList
+      : (state.open.data ? state.open.data.equipmentList : []));
+
+    subbarEl.innerHTML =
+      '<div class="searchrow">' +
+        '<input id="search" type="search" autocomplete="off" ' +
+          'placeholder="Search ticket, machine or problem" value="' + esc(h.query) + '">' +
+        (h.query ? '<button id="clearSearch" type="button" aria-label="Clear search">×</button>' : '') +
+      '</div>' +
+      '<div class="filters">' + names.map(function (name) {
+        return '<button class="chip" type="button" data-name="' + esc(name) +
+          '" aria-pressed="' + (h.equipment === name) + '">' + esc(name) + '</button>';
+      }).join('') + '</div>';
+
+    var input = document.getElementById('search');
+    input.addEventListener('input', function () {
+      state.history.query = input.value;
+      clearTimeout(searchTimer);
+      // Wait for a pause in typing rather than calling the server per keystroke.
+      searchTimer = setTimeout(function () { fetchHistory(true); }, 350);
+    });
+
+    var clear = document.getElementById('clearSearch');
+    if (clear) {
+      clear.addEventListener('click', function () {
+        state.history.query = '';
+        clearTimeout(searchTimer);
+        fetchHistory(true);
+      });
+    }
+
+    subbarEl.querySelectorAll('.chip').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.history.equipment = btn.dataset.name;
+        fetchHistory(true);
+      });
+    });
   }
 
-  document.getElementById('refresh').addEventListener('click', load);
-  load();
+  function fetchHistory(reset) {
+    var h = state.history;
+    if (reset) { h.requests = []; h.total = 0; h.hasMore = false; }
+    h.loading = true;
+    h.error = '';
+    h.loaded = true;
+
+    var token = ++tokens.history;
+    var query = h.query.trim();
+
+    function ok(result) {
+      if (token !== tokens.history) return;   // a newer request already answered
+      h.loading = false;
+      h.requests = h.requests.concat(result.requests || []);
+      h.total = result.total || 0;
+      h.hasMore = !!result.hasMore;
+      if (result.equipmentList) h.equipmentList = result.equipmentList;
+      if (state.tab === 'history') render();
+    }
+    function fail(err) {
+      if (token !== tokens.history) return;
+      h.loading = false;
+      h.error = errText(err);
+      if (state.tab === 'history') render();
+    }
+
+    if (state.tab === 'history') render();
+
+    if (query) {
+      google.script.run.withSuccessHandler(ok).withFailureHandler(fail)
+        .searchRequests({ query: query, limit: 50 });
+    } else {
+      google.script.run.withSuccessHandler(ok).withFailureHandler(fail)
+        .getHistory({ equipment: h.equipment, offset: h.requests.length, limit: PAGE });
+    }
+  }
+
+  function renderHistory() {
+    var h = state.history;
+    renderHistorySubbar();
+    countsEl.textContent = h.total ? plural(h.total, 'request') : '';
+
+    if (h.error) {
+      viewEl.innerHTML = '<div class="empty">Could not load the history.<br>' + esc(h.error) + '</div>';
+      return;
+    }
+    if (h.loading && !h.requests.length) {
+      viewEl.innerHTML = '<div class="loading">' + (h.query ? 'Searching…' : 'Loading history…') + '</div>';
+      return;
+    }
+    if (!h.requests.length) {
+      viewEl.innerHTML = '<div class="empty">' + (h.query
+        ? 'Nothing matches “' + esc(h.query) + '”.'
+        : 'No requests logged' + (h.equipment === 'All' ? ' yet.' : ' for the ' + esc(h.equipment) + '.')) +
+        '</div>';
+      return;
+    }
+
+    var head = h.query
+      ? '<p class="resultcount">' + plural(h.total, 'match') + ' for “' + esc(h.query) + '”' +
+        (h.total > h.requests.length ? ', showing the first ' + h.requests.length : '') + '</p>'
+      : '<p class="resultcount">' + plural(h.total, 'request') +
+        (h.equipment === 'All' ? ' in total' : ' for the ' + esc(h.equipment)) + '</p>';
+
+    var html = head + h.requests.map(function (r) { return cardHtml(r, false); }).join('');
+    if (h.hasMore && !h.query) {
+      html += '<button class="more" type="button" id="loadMore">' +
+        (h.loading ? 'Loading…' : 'Show ' + PAGE + ' more') + '</button>';
+    }
+
+    viewEl.innerHTML = html;
+    var more = document.getElementById('loadMore');
+    if (more) more.addEventListener('click', function () { fetchHistory(false); });
+  }
+
+  // ======================================================================
+  // Dashboard tab
+  // ======================================================================
+
+  function fetchDashboard() {
+    state.dashboard.loaded = true;
+    state.dashboard.error = '';
+    if (state.tab === 'dashboard') viewEl.innerHTML = '<div class="loading">Building the dashboard…</div>';
+    google.script.run
+      .withSuccessHandler(function (data) {
+        state.dashboard.data = data;
+        if (state.tab === 'dashboard') render();
+      })
+      .withFailureHandler(function (err) {
+        state.dashboard.error = errText(err);
+        if (state.tab === 'dashboard') render();
+      })
+      .getDashboard();
+  }
+
+  /**
+   * One horizontal bar per row. Single measure, so the panel heading names it
+   * and there is no legend; the value rides the row in ink rather than in the
+   * bar colour.
+   */
+  function barRows(rows, max, hue) {
+    return rows.map(function (row) {
+      // A zero draws nothing: a minimum bar width would show a mark where
+      // there is no data. Non-zero values get a 2% floor so they stay visible.
+      var pct = 0;
+      if (row.value > 0) pct = Math.max(max > 0 ? Math.round((row.value / max) * 100) : 0, 2);
+      return '<div class="barrow">' +
+          '<div class="barhead">' +
+            '<span class="barname">' + esc(row.name) + '</span>' +
+            '<span class="barval num">' + esc(row.display) + '</span>' +
+          '</div>' +
+          '<div class="track"><div class="fill' + (hue === 'down' ? ' down' : '') +
+            '" style="width:' + pct + '%"></div></div>' +
+          (row.sub ? '<div class="barsub">' + esc(row.sub) + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  function renderDashboard() {
+    subbarEl.innerHTML = '';
+    countsEl.textContent = '';
+
+    if (state.dashboard.error) {
+      viewEl.innerHTML = '<div class="empty">Could not build the dashboard.<br>' +
+        esc(state.dashboard.error) + '</div>';
+      return;
+    }
+    if (!state.dashboard.data) {
+      viewEl.innerHTML = '<div class="loading">Building the dashboard…</div>';
+      return;
+    }
+
+    var d = state.dashboard.data;
+    var b = d.backlog;
+    var html = '';
+
+    html += '<section class="panel">' +
+      '<h2>Backlog</h2>' +
+      '<p class="caption">Everything not yet closed out.</p>' +
+      '<div class="tiles">' +
+        '<div class="tile"><div class="value num">' + b.open + '</div><div class="name">open</div></div>' +
+        '<div class="tile' + (b.urgent ? ' alert' : '') + '"><div class="value num">' + b.urgent +
+          '</div><div class="name">urgent</div></div>' +
+        '<div class="tile' + (b.aging ? ' alert' : '') + '"><div class="value num">' + b.aging +
+          '</div><div class="name">over ' + d.agingAfterDays + 'd</div></div>' +
+      '</div>' +
+      (b.oldest
+        ? '<div class="oldest"><div class="lead eyebrow">Oldest still open</div>' +
+            esc(b.oldest.label) + ' — ' + plural(b.oldest.days, 'day') + ' old ' +
+            '<span class="ticket num">(' + esc(b.oldest.ticket || 'no ticket') + ', ' +
+            esc(b.oldest.status) + ')</span></div>'
+        : '') +
+      '</section>';
+
+    if (d.downNow && d.downNow.length) {
+      html += '<section class="panel">' +
+        '<h2>Out of service now</h2>' +
+        '<p class="caption">Reported as a safety issue or unusable, still open.</p>' +
+        '<ul class="downlist">' + d.downNow.map(function (item) {
+          return '<li><span>' + esc(item.label) +
+            '<br><span class="tk num">' + esc(item.ticket || 'no ticket') + '</span></span>' +
+            '<span class="days num">' + plural(item.days, 'day') + '</span></li>';
+        }).join('') + '</ul></section>';
+    }
+
+    if (d.offenders && d.offenders.length) {
+      var maxRecent = Math.max.apply(null, d.offenders.map(function (o) { return o.recent; }).concat([0]));
+      html += '<section class="panel">' +
+        '<h2>Requests per machine</h2>' +
+        '<p class="caption">Last ' + Math.round(d.windowDays / 30) + ' months. ' +
+          'Repeat entries are what turn “it’s playing up again” into a decision.</p>' +
+        barRows(d.offenders.map(function (o) {
+          return {
+            name: o.equipment,
+            value: o.recent,
+            display: String(o.recent),
+            sub: o.open ? o.open + ' still open' : (o.total !== o.recent ? o.total + ' all time' : '')
+          };
+        }), maxRecent, 'count') +
+        '</section>';
+    }
+
+    if (d.downtime && d.downtime.length) {
+      var maxDown = Math.max.apply(null, d.downtime.map(function (o) { return o.downDays; }).concat([0]));
+      html += '<section class="panel">' +
+        '<h2>Days out of service</h2>' +
+        '<p class="caption">How long each machine sat unusable, last ' +
+          Math.round(d.windowDays / 30) + ' months. Still-open ones count to today.</p>' +
+        barRows(d.downtime.map(function (o) {
+          return { name: o.equipment, value: o.downDays, display: plural(o.downDays, 'day'), sub: '' };
+        }), maxDown, 'down') +
+        '</section>';
+    }
+
+    html += '<section class="panel"><h2>Every request by status</h2>' +
+      '<p class="caption">' + plural(b.total, 'request') + ' logged in total.</p>' +
+      '<ul class="statuslist">' + b.byStatus.map(function (s) {
+        return '<li><span>' + esc(s.status) + '</span><span class="n num">' + s.count + '</span></li>';
+      }).join('') + '</ul></section>';
+
+    html += '<p class="stamp">As of ' + esc(d.generatedAt) + '</p>';
+
+    viewEl.innerHTML = html;
+  }
+
+  // ======================================================================
+  // Shell
+  // ======================================================================
+
+  function render() {
+    if (state.create.open) {
+      document.querySelector('header').classList.remove('on-home');
+      renderCreate();
+      return;
+    }
+
+    document.querySelector('header').classList.toggle('on-home', state.tab === 'home');
+
+    titleEl.textContent = state.tab === 'dashboard' ? 'Dashboard'
+      : state.tab === 'history' ? 'Service history'
+      : state.tab === 'open' ? 'Open requests'
+      : 'Equipment Maintenance';
+
+    if (state.tab === 'home') renderHome();
+    else if (state.tab === 'open') renderOpen();
+    else if (state.tab === 'history') renderHistory();
+    else renderDashboard();
+  }
+
+  function selectTab(tab) {
+    state.create.open = false;
+    state.tab = tab;
+    document.querySelectorAll('.tabbar button').forEach(function (btn) {
+      btn.setAttribute('aria-selected', String(btn.dataset.tab === tab));
+    });
+    window.scrollTo(0, 0);
+
+    // A tab that failed to load counts as not loaded, so coming back to it
+    // retries instead of showing the same stale error until someone finds the
+    // refresh button.
+    if (tab === 'history' && (!state.history.loaded || state.history.error)) fetchHistory(true);
+    else if (tab === 'dashboard' && (!state.dashboard.loaded || state.dashboard.error)) fetchDashboard();
+    else render();
+  }
+
+  document.querySelectorAll('.tabbar button').forEach(function (btn) {
+    btn.addEventListener('click', function () { selectTab(btn.dataset.tab); });
+  });
+
+  document.getElementById('refresh').addEventListener('click', function () {
+    if (state.create.open) return;
+    if (state.tab === 'history') fetchHistory(true);
+    else if (state.tab === 'dashboard') fetchDashboard();
+    else loadOpen();
+  });
+
+  // Both fire at once rather than in sequence, so opening Create Ticket
+  // straight after a scan does not wait on the log.
+  loadOptions();
+  loadOpen();
+  render();
 })();
 </script>
