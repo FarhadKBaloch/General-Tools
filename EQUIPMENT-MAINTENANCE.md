@@ -4,10 +4,11 @@ A maintenance request system for the tractor, gator, truck and sprayer — plus
 ladders, stools, pallet jacks and everything else — that costs nothing, needs
 no server, and takes about 45 minutes to set up.
 
-Someone scans the sticker on the machine, a form opens with that equipment
-already filled in, they describe the problem and submit. The Facilities Lead,
-the Owner, and a Leadership Team member get an email within seconds, and the
-request lands as a row in a spreadsheet you can filter and sort.
+Someone scans the sticker on the machine, the app opens already knowing which
+machine it is, they tap **Create ticket** and describe the problem. The
+Facilities Lead, the Owner, and a Leadership Team member get an email within
+seconds, and the request lands as a row in a spreadsheet you can filter and
+sort.
 
 Equipment that breaks rarely doesn't need its own sticker. One **General
 equipment** QR code covers all of it, and asks the person what they're looking
@@ -15,36 +16,30 @@ at.
 
 ---
 
-## Is a QR code the right approach?
+## Why this shape
 
-Yes — with one adjustment to what you described.
+The thing that decides whether a maintenance log succeeds is **how many seconds
+it takes a seasonal crew member holding a greasy phone to file a report**.
+Everything else is secondary.
 
-The instinct to build "an app where a QR code opens the equipment's page and you
-tag people" is the right *idea*, but building it that way means hosting,
-accounts, and a login prompt standing between a person in a dusty cab and a
-30-second report. Whatever you build, the thing that decides whether this
-succeeds is **how many seconds it takes a seasonal crew member holding a
-greasy phone to file a report**. Everything else is secondary.
+So the whole system is a QR sticker, an app page, and a spreadsheet — no server,
+no accounts, no hosting bill.
 
-So: keep the QR codes, drop the app. Use **one Google Form with a pre-filled
-link per item**, which gives you the same scan-to-report experience with
-none of the infrastructure.
-
-| | Google Form + Sheet | Custom app | Shared sheet, no form | Paper log |
+| | This (app + Sheet) | A real CMMS | Shared sheet, no app | Paper log |
 |---|---|---|---|---|
-| **Cost** | $0 | Hosting + your time | $0 | $0 |
-| **Server to maintain** | None | Yes | None | None |
+| **Cost** | $0 | $30–200/mo | $0 | $0 |
+| **Server to maintain** | None | Theirs | None | None |
 | **Works without a login** | Yes | Rarely | No | Yes |
-| **Usable one-handed on a phone** | Yes | If well built | Poor | n/a |
+| **Usable one-handed on a phone** | Yes | Usually | Poor | n/a |
 | **Notifies people automatically** | Yes | Yes | No | No |
 | **History is queryable** | Yes | Yes | Yes | No |
-| **Time to first working version** | ~45 min | Weeks | ~15 min | 0 |
+| **Time to first working version** | ~1 hour | Days | ~15 min | 0 |
 
-The one thing you give up is that a scan opens a *blank request form*, not a
-page showing that equipment's service history. In practice the person scanning
-is reporting a problem, not researching one — the history matters to whoever
-does the repair, and they can open the sheet. If you later decide the history
-does need to be at the point of scan, [see the upgrade path](#if-you-outgrow-this).
+**The one honest cost of the app** over a bare Google Form: an Apps Script web
+app cold-starts in roughly 2–4 seconds, where a form opens in under one. In
+exchange you get the service history, search, the dashboard, and photos — none
+of which a form can do. If the wake-up ever becomes the thing people complain
+about, the backup form stickers are still live and still work.
 
 ### One change to the "tagging" idea
 
@@ -73,14 +68,19 @@ the three impossible to get wrong.
    Sticker on the tractor
             │  scan
             ▼
-   Google Form, equipment pre-filled     ← one form, one pre-filled link per item
-            │  submit
+   The app opens on Home               ← the machine is already known
+            │  Create ticket
             ▼
    Google Sheet (the maintenance log)  ← every request, permanently, sortable
             │
             ▼
    Apps Script emails 3 people         ← Facilities Lead + Owner + Leadership pick
 ```
+
+Crew only ever see the app. The Google Form still exists behind it and still
+works — it is the backup route if the app is slow to wake or someone has an
+older sticker — but nothing points people at it. Both routes write the same
+row, take a number from the same sequence, and send the same email.
 
 Files in this repo that you'll use:
 
@@ -206,27 +206,32 @@ are the first thing to check.
 
 ---
 
-## Step 3 — Get one pre-filled link (2 minutes)
+## Step 3 — Get the link the QR codes will use (2 minutes)
 
-This is the trick the whole system rests on. A Google Form can have a value
-pre-selected via the URL, so **one form** serves every piece of equipment — you just
-point each QR code at a different version of the link.
+Deploy the web app first ([Step 6](#step-6--using-the-log-on-a-phone)), then
+copy its URL: **Deploy → Manage deployments → copy the web app URL**. It ends
+in `/exec`.
 
-In the **form**, click the **⋮** menu (top right) → **Get pre-filled link**.
-Select any one item — it doesn't matter which — then click **Get link** and
-**Copy link**.
+That single URL is all the label generator needs. It appends `?equipment=<name>`
+per machine, so the tractor's sticker opens the app already knowing it is the
+tractor.
 
-You'll get something like:
+> Use the `/exec` deployment URL, not the `/dev` one. A `/dev` link only works
+> for you, while signed in — crew would get an error.
+
+### If you also want backup form stickers
+
+A Google Form can have a value pre-selected via the URL, so one form serves
+every machine. In the **form**, click the **⋮** menu → **Get pre-filled link**,
+select any one item, then **Get link** → **Copy link**. It looks like:
 
 ```
 https://docs.google.com/forms/d/e/1FAIpQLSd.../viewform?usp=pp_url&entry.1234567890=Tractor
 ```
 
-That `entry.1234567890` is the internal ID of your Equipment question. Keep the
-link on your clipboard.
-
-> Don't use the short `forms.gle` link for this — shortened links drop the
-> pre-fill, and every QR code would open a blank form.
+Feed that to the label generator's *pre-filled Google Form link* mode. Don't use
+the short `forms.gle` link — shortened links drop the pre-fill, and every code
+would open a blank form.
 
 ---
 
@@ -236,8 +241,8 @@ Open `equipment-qr-labels.html` in any browser (double-click it; it needs
 `qr.js` sitting next to it). Nothing is uploaded — the QR codes are generated
 in the page itself.
 
-1. Paste the pre-filled link into **Pre-filled form link**. The page will
-   confirm which field it found.
+1. Leave **Link source** on **The maintenance app** and paste the web app URL.
+   The page shows you what one label will open.
 2. Type your equipment names, one per line, spelled exactly as in the form —
    including `General equipment`:
 
@@ -365,6 +370,28 @@ to the sheet.
 
 The app has three tabs along the bottom, where a thumb can reach them.
 
+### Home — where a scan lands
+
+The wordmark, a **Create ticket** button, and how many requests are open and
+urgent. If they arrived by scanning the tractor's sticker, Home says so and
+lists what is already open against that machine — so two people don't file the
+same fault twice — and Create ticket opens with **Tractor** already chosen.
+
+**Create ticket** does everything the Google Form did, without leaving the app:
+equipment, urgency, what's wrong, who's reporting it, and which Leadership Team
+member to copy. It asks *Which item, and where is it?* only when the answer is
+**General equipment**, so the tractor's sticker never asks a question it already
+answered.
+
+Two small things that matter in practice:
+
+- **The reporter's name is remembered on that phone**, so it's typed once rather
+  than every time.
+- **A photo can be attached** — a cracked weld is worth more than a paragraph.
+  It's resized on the phone before it's sent (long edge 1600px, JPEG), because a
+  raw camera file is several megabytes over farm signal. The photo lands in a
+  Drive folder and the link goes into the sheet, the email, and the request card.
+
 ### Open — what needs doing
 
 - **Requests as cards**, urgent ones flagged red rather than buried in row 47.
@@ -408,6 +435,27 @@ to the phone, so it stays fast no matter how long the log gets. Two settings in
 agingAfterDays: 7,        // an open request older than this counts as "aging"
 dashboardWindowDays: 365  // how far back the per-machine figures look
 ```
+
+The Create ticket form is built from `CONFIG` too, so a machine that has never
+broken still appears in the list:
+
+```js
+equipment: ['Tractor', 'Gator', 'Truck', 'Sprayer', 'General equipment'],
+urgencyOptions: [ ... ],              // most serious first
+photoFolder: 'Equipment maintenance photos',
+photoLinkSharing: true                // see below
+```
+
+Keep `equipment` in step with the form's answer options and with the printed
+labels — a name the script doesn't recognise is rejected rather than filed
+under something wrong.
+
+> **On `photoLinkSharing`.** Photos go into a folder in *your* Drive, and the
+> people getting the email aren't all in it. With this on, each photo gets a
+> view-only link that works for anyone who has it — which is what makes the
+> link in the email usable. Turn it off if you'd rather share the folder by
+> hand; the photo is still saved and still linked, it just won't open for
+> everyone. Nothing else in the app is affected either way.
 
 The dashboard is visible to anyone who can open the app. There's no sign-in to
 hang a permission on, and a crew member seeing the backlog is usually a good
@@ -475,6 +523,28 @@ its own triggers rather than adding a second copy, so it's safe to re-run.
 8. **Check it worked:** the log should now be colour-coded, an "On my phone"
    tab should exist listing only open requests, and **Maintenance → Send test
    email** should still arrive.
+
+### Moving the QR codes to the app
+
+This is the one upgrade that **does need the labels reprinted**. The stickers
+currently point at the Google Form; they need to point at the web app instead.
+
+1. **Deploy the app first** and copy its `/exec` URL.
+2. Add the new settings to `CONFIG` — `equipment`, `urgencyOptions`,
+   `photoFolder`, `photoLinkSharing`. Without `equipment` the app has nothing
+   to offer in the Create ticket list.
+3. **Run `setUp` again.** It adds a `Photo` column if the log doesn't have one.
+4. **Re-authorise the script.** Saving photos needs Drive access, which the
+   script did not have before, so Google will ask again the first time you run
+   anything.
+5. **Reprint the stickers** using the label generator's *maintenance app* mode.
+6. Leave the old form stickers up until the new ones are on the machines. They
+   keep working the whole time — both routes write to the same sheet and share
+   one ticket sequence, so there is no cutover moment and nothing to co-ordinate.
+
+If you'd rather not reprint yet, everything else in this version works with the
+old form stickers exactly as before. The app just won't know which machine
+someone scanned, so they'll pick it from the list.
 
 ### Two behaviours that changed
 

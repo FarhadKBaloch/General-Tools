@@ -1,60 +1,77 @@
 <!--
-  maintenance-webapp.html — the phone-friendly view of the maintenance log.
+  maintenance-webapp.html — the Millcreek equipment maintenance app.
 
   Paste this into the same Apps Script project as maintenance-notify.gs, as an
   HTML file named exactly "webapp" (File -> New -> HTML file -> name it webapp).
   Then Deploy -> New deployment -> Web app.
 
-  Three tabs, reachable with a thumb:
+  Four tabs along the bottom, where a thumb reaches them:
+    Home      — the wordmark, Create Ticket, and what is outstanding
     Open      — what needs doing, and the controls to update it
     History   — the full service record, searchable
     Dashboard — backlog, repeat offenders and downtime for managers
 
-  Cards instead of a grid, thumb-sized controls, and no sideways scrolling.
+  Look: clean and plain, workshop rather than consumer app. Squared corners,
+  uppercase micro-labels, tabular figures, one green accent doing all the work.
 -->
 <style>
   :root {
-    --ink: #1c2321;
-    --muted: #6b7472;
-    --line: #dfe5e1;
-    --bg: #f4f6f4;
+    --ink: #1a1f1c;
+    --ink-2: #3d4642;
+    --muted: #6b7570;
+    --line: #dde3de;
+    --line-2: #eef1ee;
+    --bg: #f4f6f3;
     --card: #ffffff;
-    --accent: #2f6f4e;
+    --accent: #2d6a4a;      /* nursery green — the one colour that acts */
+    --accent-ink: #1e4a33;
     --urgent: #8e2a1c;
-    --urgent-bg: #fbe0dd;
-    /* Data hues. Kept distinct from the green accent, which means "action"
-       rather than "measurement". Validated against both card surfaces. */
+    --urgent-bg: #fbe3df;
+    /* Data hues, deliberately not the accent: green means "do something" here,
+       not "measure something". Validated against both card surfaces. */
     --data-count: #2a78d6;
     --data-down: #eb6834;
-    --track: #eef1ef;
+    --track: #eaeee9;
+    --radius: 6px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; }
   body {
-    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
     color: var(--ink);
     background: var(--bg);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* Uppercase micro-label — the workshop-signage note that runs through the app */
+  .eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--muted);
   }
 
   header {
     position: sticky; top: 0; z-index: 5;
     background: var(--card);
     border-bottom: 1px solid var(--line);
-    padding: 12px 16px 0;
+    padding: 10px 16px 0;
   }
-  .titlebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  h1 { margin: 0; font-size: 17px; flex: 1; }
+  .titlebar { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+  header.on-home .lockup { visibility: hidden; }
+  .titlebar .lockup { flex: 1; min-width: 0; }
+  .titlebar .brand {
+    font-size: 13px; font-weight: 800; letter-spacing: .02em; color: var(--accent);
+  }
+  h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
   .counts { font-size: 13px; color: var(--muted); white-space: nowrap; }
   .counts .flag { color: var(--urgent); font-weight: 700; }
   #refresh {
     flex: 0 0 auto; width: 44px; height: 44px;
-    font: inherit; font-size: 18px;
-    border: 1px solid var(--line); border-radius: 10px;
+    font: inherit; font-size: 17px;
+    border: 1px solid var(--line); border-radius: var(--radius);
     background: var(--card); color: var(--accent); cursor: pointer;
   }
   #subbar:empty { display: none; }
 
-  /* Horizontally scrolling filter chips — the one place sideways movement helps. */
   .filters {
     display: flex; gap: 8px;
     overflow-x: auto;
@@ -68,100 +85,150 @@
     display: inline-flex; align-items: center;
     min-height: 44px;              /* thumb-sized, per Apple's touch guidance */
     font: inherit; font-size: 14px;
-    padding: 0 16px;
-    border-radius: 999px;
+    padding: 0 14px;
+    border-radius: var(--radius);
     border: 1px solid var(--line);
     background: var(--card);
     color: var(--ink);
     cursor: pointer;
   }
-  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .chip[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+  }
 
   .searchrow { padding: 10px 0 12px; position: relative; }
   #search {
     width: 100%; font: inherit; font-size: 16px;   /* 16px stops iOS zooming on focus */
-    min-height: 44px; padding: 10px 40px 10px 14px;
-    border: 1px solid var(--line); border-radius: 10px;
+    min-height: 44px; padding: 10px 44px 10px 13px;
+    border: 1px solid var(--line); border-radius: var(--radius);
     background: var(--card); color: inherit;
   }
   #clearSearch {
-    position: absolute; right: 4px; top: 10px;
+    position: absolute; right: 2px; top: 10px;
     width: 44px; height: 44px;
     border: none; background: none; color: var(--muted);
     font: inherit; font-size: 20px; cursor: pointer;
   }
 
-  main { padding: 14px 16px calc(84px + env(safe-area-inset-bottom)); }
+  main { padding: 16px 16px calc(88px + env(safe-area-inset-bottom)); }
+
+  /* ---- home ---- */
+  .lockup-big { text-align: center; padding: 18px 0 22px; }
+  .lockup-big .wordmark {
+    font-size: 40px; font-weight: 800; letter-spacing: -.025em;
+    color: var(--accent); line-height: 1;
+  }
+  .lockup-big .rule {
+    width: 46px; height: 3px; background: var(--accent);
+    margin: 13px auto 11px; border-radius: 2px;
+  }
+  .lockup-big .sub { font-size: 12px; letter-spacing: .13em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; }
+
+  .scanned {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px;
+  }
+  .scanned .what { flex: 1; min-width: 0; }
+  .scanned .name { font-weight: 700; font-size: 16px; }
+  .scanned button {
+    flex: 0 0 auto; min-height: 40px; padding: 0 12px;
+    font: inherit; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--card); color: var(--muted); cursor: pointer;
+  }
+
+  .glance { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px;
+    background: var(--line); border: 1px solid var(--line);
+    border-radius: var(--radius); overflow: hidden; margin-bottom: 14px; }
+  .glance div { background: var(--card); padding: 14px 12px; text-align: center; }
+  .glance .v { font-size: 26px; font-weight: 800; line-height: 1.05; }
+  .glance .k { font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; margin-top: 4px; }
+  .glance .alert .v { color: var(--urgent); }
 
   /* ---- request cards ---- */
   .card {
     background: var(--card);
     border: 1px solid var(--line);
-    border-left: 4px solid var(--line);
-    border-radius: 12px;
+    border-left: 3px solid var(--line);
+    border-radius: var(--radius);
     padding: 14px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   .card.is-urgent { border-left-color: var(--urgent); }
-  .card.is-done { opacity: .62; }
+  .card.is-done { opacity: .6; }
 
   .card .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
-  .card .equipment { font-weight: 700; font-size: 17px; }
-  .card .ticket { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .card .equipment { font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
+  .card .ticket { font-size: 12px; color: var(--muted); }
   .badge {
-    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+    font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em;
+    padding: 4px 7px; border-radius: 3px; white-space: nowrap;
   }
   .badge.urgent { background: var(--urgent-bg); color: var(--urgent); }
-  .badge.status { background: #eef1ef; color: var(--muted); }
-  .badge.status[data-status="Open"] { background: #fdecc8; color: #7a4f01; }
-  .badge.status[data-status="In progress"] { background: #d6e4f7; color: #1c3d69; }
-  .badge.status[data-status="Waiting on parts"] { background: #f0e0f5; color: #5b2d6e; }
-  .badge.status[data-status="Done"] { background: #dff0e2; color: #1e5128; }
+  .badge.status { background: var(--line-2); color: var(--ink-2); }
+  .badge.status[data-status="Open"] { background: #fbeccd; color: #6f4703; }
+  .badge.status[data-status="In progress"] { background: #d9e6f6; color: #1b3d67; }
+  .badge.status[data-status="Waiting on parts"] { background: #ece0f2; color: #552f68; }
+  .badge.status[data-status="Done"] { background: #dceee1; color: #1c4c2f; }
 
   .card .problem { margin: 9px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .card .meta { margin-top: 8px; font-size: 13px; color: var(--muted); }
   .card .done-notes {
     margin-top: 10px; padding: 10px 12px;
-    background: var(--bg); border-radius: 8px;
+    background: var(--bg); border-radius: var(--radius);
     font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere;
   }
-  .card .done-notes b { display: block; font-size: 12px; color: var(--muted); font-weight: 700;
-    text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
+  .card .done-notes b { display: block; font-size: 10px; color: var(--muted); font-weight: 800;
+    text-transform: uppercase; letter-spacing: .07em; margin-bottom: 4px; }
+  .card .photo { display: inline-block; margin-top: 10px; font-size: 14px;
+    font-weight: 600; color: var(--accent); }
 
-  .card details { margin-top: 12px; }
+  .card details { margin-top: 10px; }
   .card summary {
-    cursor: pointer; font-size: 15px; font-weight: 600; color: var(--accent);
+    cursor: pointer; font-size: 14px; font-weight: 700; color: var(--accent);
     display: flex; align-items: center; min-height: 44px;
-    list-style: none;
+    list-style: none; text-transform: uppercase; letter-spacing: .06em;
   }
   .card summary::-webkit-details-marker { display: none; }
-  .card summary::after { content: " ›"; }
-  .card details[open] summary::after { content: " ⌄"; }
+  .card summary::after { content: " +"; }
+  .card details[open] summary::after { content: " −"; }
 
-  label.field { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 5px; }
-  select, textarea {
+  label.field { display: block; font-size: 11px; font-weight: 700; margin: 14px 0 5px;
+    text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  label.field .req { color: var(--urgent); }
+  select, textarea, input[type=text] {
     width: 100%; font: inherit; font-size: 16px;
-    padding: 11px; border: 1px solid var(--line); border-radius: 8px;
+    padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius);
     background: var(--card); color: inherit;
   }
-  textarea { min-height: 76px; resize: vertical; }
+  textarea { min-height: 92px; resize: vertical; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 5px; }
 
-  button.save, a.newreq {
+  button.primary, a.primary {
     display: block; width: 100%; text-align: center; text-decoration: none;
     font: inherit; font-weight: 700; font-size: 16px;
-    padding: 13px; border-radius: 10px; border: none;
+    min-height: 52px; padding: 15px; border-radius: var(--radius); border: none;
     background: var(--accent); color: #fff; cursor: pointer;
+    letter-spacing: .01em;
+  }
+  button.primary:disabled { opacity: .55; }
+  button.secondary {
+    display: block; width: 100%; margin-top: 10px;
+    font: inherit; font-weight: 600; font-size: 15px;
+    min-height: 48px; padding: 12px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--card); color: var(--ink-2); cursor: pointer;
   }
   button.save { margin-top: 12px; }
-  a.newreq { margin-bottom: 14px; }
-  button.save:disabled { opacity: .5; }
-
   button.more {
     display: block; width: 100%; margin-top: 4px;
     font: inherit; font-weight: 600; font-size: 15px;
     min-height: 44px; padding: 12px;
-    border: 1px solid var(--accent); border-radius: 10px;
+    border: 1px solid var(--accent); border-radius: var(--radius);
     background: var(--card); color: var(--accent); cursor: pointer;
   }
 
@@ -173,29 +240,61 @@
   .trimmed { text-align: center; color: var(--muted); font-size: 13px; margin: 4px 0 0; }
   .resultcount { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
 
+  /* ---- create ticket ---- */
+  .formcard {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 4px 16px 18px;
+  }
+  .formcard .first { margin-top: 14px; }
+  .formerr {
+    background: var(--urgent-bg); color: var(--urgent);
+    border-radius: var(--radius); padding: 11px 13px; margin: 14px 0 0;
+    font-size: 14px; font-weight: 600;
+  }
+  .photorow { display: flex; align-items: center; gap: 10px; }
+  .photorow label.file {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    min-height: 48px; padding: 12px; margin: 0;
+    border: 1px dashed var(--line); border-radius: var(--radius);
+    color: var(--accent); font-weight: 600; font-size: 15px; cursor: pointer;
+    text-transform: none; letter-spacing: 0;
+  }
+  .photorow input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .photoprev { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+  .photoprev img { width: 62px; height: 62px; object-fit: cover; border-radius: var(--radius);
+    border: 1px solid var(--line); }
+  .photoprev .pname { flex: 1; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  .photoprev button {
+    min-height: 40px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--card); color: var(--muted); cursor: pointer;
+  }
+
+  .done-panel { text-align: center; padding: 26px 16px; background: var(--card);
+    border: 1px solid var(--line); border-radius: var(--radius); }
+  .done-panel .tick { font-size: 40px; line-height: 1; color: var(--accent); }
+  .done-panel h2 { margin: 12px 0 4px; font-size: 20px; }
+  .done-panel .num { font-weight: 800; }
+  .done-panel p { color: var(--muted); margin: 0 0 18px; }
+
   /* ---- dashboard ---- */
   .panel {
     background: var(--card); border: 1px solid var(--line);
-    border-radius: 12px; padding: 16px; margin-bottom: 12px;
+    border-radius: var(--radius); padding: 16px; margin-bottom: 10px;
   }
-  .panel h2 {
-    margin: 0 0 2px; font-size: 13px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
-  }
+  .panel h2 { margin: 0 0 2px; font-size: 11px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
   .panel .caption { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
 
   .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .tile { text-align: left; }
-  .tile .value { font-size: 30px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
-  .tile .name { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .tile .value { font-size: 30px; font-weight: 800; line-height: 1.05; }
+  .tile .name { font-size: 11px; color: var(--muted); margin-top: 3px;
+    text-transform: uppercase; letter-spacing: .07em; font-weight: 700; }
   .tile.alert .value { color: var(--urgent); }
 
   .oldest { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 14px; }
-  .oldest .lead { color: var(--muted); font-size: 12px; text-transform: uppercase;
-    letter-spacing: .04em; font-weight: 700; margin-bottom: 4px; }
+  .oldest .lead { margin-bottom: 5px; }
 
-  /* One measure per row: a label, a thin bar, and the value in ink beside it.
-     Single series, so the panel title names it and no legend box is needed. */
   .barrow { margin-bottom: 12px; }
   .barrow:last-child { margin-bottom: 0; }
   .barrow .barhead {
@@ -203,30 +302,29 @@
     gap: 10px; margin-bottom: 5px;
   }
   .barrow .barname { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
-  .barrow .barval { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .barrow .barsub { font-size: 12px; color: var(--muted); }
+  .barrow .barval { font-size: 14px; font-weight: 700; white-space: nowrap; }
+  .barrow .barsub { font-size: 12px; color: var(--muted); margin-top: 3px; }
   .track { background: var(--track); border-radius: 2px; height: 10px; overflow: hidden; }
   .fill {
     height: 100%;
-    border-radius: 0 4px 4px 0;   /* square at the baseline, rounded at the data end */
+    border-radius: 0 3px 3px 0;   /* square at the baseline, rounded at the data end */
     background: var(--data-count);
   }
   .fill.down { background: var(--data-down); }
 
-  .downlist { list-style: none; margin: 0; padding: 0; }
+  .downlist, .statuslist { list-style: none; margin: 0; padding: 0; }
   .downlist li {
     display: flex; justify-content: space-between; gap: 12px;
-    padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px;
+    padding: 10px 0; border-bottom: 1px solid var(--line-2); font-size: 14px;
   }
   .downlist li:last-child { border-bottom: none; padding-bottom: 0; }
-  .downlist .days { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .downlist .days { font-weight: 700; white-space: nowrap; }
   .downlist .tk { font-size: 12px; color: var(--muted); }
-
-  .statuslist { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  .statuslist { font-size: 14px; }
   .statuslist li { display: flex; justify-content: space-between; padding: 7px 0; }
-  .statuslist .n { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .statuslist .n { font-weight: 700; }
 
-  .stamp { text-align: center; font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+  .stamp { text-align: center; font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 
   /* ---- bottom tab bar ---- */
   .tabbar {
@@ -237,33 +335,47 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
   .tabbar button {
-    flex: 1; min-height: 56px;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-    font: inherit; font-size: 11px; font-weight: 600;
-    border: none; background: none; color: var(--muted); cursor: pointer;
+    flex: 1; min-height: 58px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font: inherit; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em;
+    border: none; border-top: 2px solid transparent; background: none;
+    color: var(--muted); cursor: pointer;
   }
-  .tabbar button .ico { font-size: 19px; line-height: 1; }
-  .tabbar button[aria-selected="true"] { color: var(--accent); }
+  .tabbar button .ico { font-size: 17px; line-height: 1; }
+  .tabbar button[aria-selected="true"] { color: var(--accent); border-top-color: var(--accent); }
   .tabbar button .dot {
-    display: inline-block; min-width: 17px; padding: 0 4px; margin-left: 4px;
-    background: var(--urgent); color: #fff; border-radius: 999px;
-    font-size: 10px; font-weight: 700; line-height: 17px;
+    display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 4px;
+    background: var(--urgent); color: #fff; border-radius: 8px;
+    font-size: 10px; font-weight: 700; line-height: 16px;
   }
 
   @media (prefers-color-scheme: dark) {
     :root {
-      --ink: #e8ebe9; --muted: #9aa5a1; --line: #333b38; --bg: #141817;
-      --card: #1e2422; --urgent-bg: #4a201a; --urgent: #f0a396;
-      --data-count: #3987e5; --data-down: #d95926; --track: #2a3230;
+      --ink: #e7ebe8; --ink-2: #b9c2bd; --muted: #949e99;
+      --line: #333a36; --line-2: #262d2a; --bg: #121614; --card: #1b201e;
+      --accent: #5bab7f; --accent-ink: #8fcaa8;
+      --urgent: #f0a396; --urgent-bg: #46201a;
+      --data-count: #3987e5; --data-down: #d95926; --track: #2a312e;
     }
-    .badge.status { background: #2a3230; }
+    .badge.status[data-status="Open"] { background: #4a3a12; color: #f4d391; }
+    .badge.status[data-status="In progress"] { background: #1d3352; color: #b9d3f2; }
+    .badge.status[data-status="Waiting on parts"] { background: #3b2748; color: #dcc0ea; }
+    .badge.status[data-status="Done"] { background: #1e3f2a; color: #a9d9ba; }
   }
 </style>
 
+<!-- doGet bakes the scanned machine in here; the page runs in a sandboxed
+     iframe and cannot read the address bar itself. -->
+<div id="boot" data-scanned="<?= scannedEquipment ?>" hidden></div>
+
 <header>
   <div class="titlebar">
-    <h1 id="title">Equipment Maintenance</h1>
-    <div class="counts" id="counts"></div>
+    <div class="lockup">
+      <div class="brand">Millcreek</div>
+      <h1 id="title">Equipment Maintenance</h1>
+    </div>
+    <div class="counts num" id="counts"></div>
     <button id="refresh" type="button" aria-label="Refresh">↻</button>
   </div>
   <div id="subbar"></div>
@@ -272,11 +384,14 @@
 <main id="view"><div class="loading">Loading…</div></main>
 
 <nav class="tabbar" role="tablist">
-  <button type="button" role="tab" data-tab="open" aria-selected="true">
-    <span class="ico" aria-hidden="true">◉</span><span>Open<span class="dot" id="openDot" hidden></span></span>
+  <button type="button" role="tab" data-tab="home" aria-selected="true">
+    <span class="ico" aria-hidden="true">⌂</span><span>Home</span>
+  </button>
+  <button type="button" role="tab" data-tab="open" aria-selected="false">
+    <span class="ico" aria-hidden="true">◉</span><span>Open<span class="dot num" id="openDot" hidden></span></span>
   </button>
   <button type="button" role="tab" data-tab="history" aria-selected="false">
-    <span class="ico" aria-hidden="true">🕘</span><span>History</span>
+    <span class="ico" aria-hidden="true">≡</span><span>History</span>
   </button>
   <button type="button" role="tab" data-tab="dashboard" aria-selected="false">
     <span class="ico" aria-hidden="true">▦</span><span>Dashboard</span>
@@ -289,20 +404,28 @@
 
   var CLOSED = ['Done', 'Not needed'];
   var PAGE = 25;
+  var NAME_KEY = 'millcreek.reporter';
+
+  // The scanned machine, baked in by doGet. If the template was not rendered
+  // (opened as a plain file) the attribute still holds the raw scriptlet, so
+  // anything with a "<" in it is treated as absent.
+  var bootEl = document.getElementById('boot');
+  var SCANNED = (bootEl && bootEl.dataset.scanned) || '';
+  if (SCANNED.indexOf('<') !== -1) SCANNED = '';
 
   var state = {
-    tab: 'open',
+    tab: 'home',
+    scanned: SCANNED,
+    options: null,
     open: { data: null, equipment: 'All', onlyOpen: true, error: '' },
     history: {
       query: '', equipment: 'All', requests: [], total: 0, hasMore: false,
       equipmentList: [], loaded: false, loading: false, error: ''
     },
-    dashboard: { data: null, loaded: false, error: '' }
+    dashboard: { data: null, loaded: false, error: '' },
+    create: { open: false, submitting: false, error: '', done: null, photo: null }
   };
 
-  // Every server call carries a token. A slow reply that arrives after a newer
-  // one has already landed is dropped, so typing fast cannot leave stale
-  // results on screen.
   var tokens = { history: 0 };
 
   var viewEl = document.getElementById('view');
@@ -319,25 +442,343 @@
   function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
   function errText(err) { return (err && err.message) ? err.message : String(err || 'Something went wrong.'); }
 
+  function remembered(key) {
+    try { return window.localStorage.getItem(key) || ''; } catch (e) { return ''; }
+  }
+  function remember(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* private mode */ }
+  }
+
   // ======================================================================
-  // Open tab
+  // Loading
   // ======================================================================
+
+  function loadOptions() {
+    google.script.run
+      .withSuccessHandler(function (opts) {
+        state.options = opts;
+        if (state.create.open) render();
+      })
+      .withFailureHandler(function () { /* Create Ticket reports it when opened */ })
+      .getFormOptions();
+  }
 
   function loadOpen() {
     state.open.error = '';
-    if (state.tab === 'open') viewEl.innerHTML = '<div class="loading">Loading requests…</div>';
     google.script.run
       .withSuccessHandler(function (data) {
         state.open.data = data;
-        if (state.tab === 'open') render();
         renderTabBadge();
+        if (state.tab === 'open' || state.tab === 'home') render();
       })
       .withFailureHandler(function (err) {
         state.open.error = errText(err);
-        if (state.tab === 'open') render();
+        if (state.tab === 'open' || state.tab === 'home') render();
       })
       .getRequests();
   }
+
+  // ======================================================================
+  // Home
+  // ======================================================================
+
+  function renderHome() {
+    subbarEl.innerHTML = '';
+    countsEl.textContent = '';
+
+    var html =
+      '<div class="lockup-big">' +
+        '<div class="wordmark">Millcreek</div>' +
+        '<div class="rule"></div>' +
+        '<div class="sub">Equipment Maintenance</div>' +
+      '</div>';
+
+    if (state.scanned) {
+      html += '<div class="scanned">' +
+          '<div class="what"><div class="eyebrow">Scanned</div>' +
+            '<div class="name">' + esc(state.scanned) + '</div></div>' +
+          '<button type="button" id="clearScanned">Change</button>' +
+        '</div>';
+    }
+
+    html += '<button class="primary" type="button" id="createBtn">Create ticket</button>';
+
+    if (state.open.error) {
+      html += '<p class="trimmed">Could not load the log. ' + esc(state.open.error) + '</p>';
+    } else if (!state.open.data) {
+      html += '<div class="loading">Loading…</div>';
+    } else {
+      var all = state.open.data.requests;
+      var open = all.filter(function (r) { return !isClosed(r); });
+      var urgent = open.filter(function (r) { return r.urgent; });
+      var mine = state.scanned
+        ? open.filter(function (r) { return r.equipment === state.scanned; })
+        : [];
+
+      html += '<div class="glance">' +
+          '<div><div class="v num">' + open.length + '</div><div class="k">Open</div></div>' +
+          '<div class="' + (urgent.length ? 'alert' : '') + '"><div class="v num">' + urgent.length +
+            '</div><div class="k">Urgent</div></div>' +
+        '</div>';
+
+      if (state.scanned) {
+        html += '<div class="eyebrow" style="margin:18px 0 8px">Open on this ' +
+          esc(state.scanned) + '</div>';
+        html += mine.length
+          ? mine.map(function (r) { return cardHtml(r, false); }).join('')
+          : '<p class="trimmed" style="text-align:left">Nothing open against it.</p>';
+      } else if (urgent.length) {
+        html += '<div class="eyebrow" style="margin:18px 0 8px">Needs attention now</div>' +
+          urgent.map(function (r) { return cardHtml(r, false); }).join('');
+      }
+    }
+
+    viewEl.innerHTML = html;
+
+    document.getElementById('createBtn').addEventListener('click', function () {
+      openCreate();
+    });
+    var clear = document.getElementById('clearScanned');
+    if (clear) {
+      clear.addEventListener('click', function () { state.scanned = ''; render(); });
+    }
+  }
+
+  // ======================================================================
+  // Create ticket
+  // ======================================================================
+
+  function openCreate() {
+    state.create.open = true;
+    state.create.error = '';
+    state.create.done = null;
+    state.create.photo = null;
+    render();
+  }
+
+  function closeCreate() {
+    state.create.open = false;
+    state.create.photo = null;
+    render();
+  }
+
+  function renderCreate() {
+    subbarEl.innerHTML = '';
+    countsEl.textContent = '';
+    titleEl.textContent = 'Create ticket';
+
+    var done = state.create.done;
+    if (done) {
+      viewEl.innerHTML =
+        '<div class="done-panel">' +
+          '<div class="tick" aria-hidden="true">✓</div>' +
+          '<h2>Ticket <span class="num">' + esc(done.ticket) + '</span></h2>' +
+          '<p>The Facilities Lead, the Owner and your leadership contact have been emailed.</p>' +
+          '<button class="primary" type="button" id="againBtn">Report something else</button>' +
+          '<button class="secondary" type="button" id="doneBtn">Done</button>' +
+        '</div>';
+      document.getElementById('againBtn').addEventListener('click', openCreate);
+      document.getElementById('doneBtn').addEventListener('click', function () {
+        closeCreate();
+        selectTab('home');
+      });
+      return;
+    }
+
+    var opts = state.options;
+    if (!opts) {
+      viewEl.innerHTML = '<div class="loading">Loading the form…</div>' +
+        '<button class="secondary" type="button" id="cancelBtn">Cancel</button>';
+      document.getElementById('cancelBtn').addEventListener('click', closeCreate);
+      return;
+    }
+
+    var chosen = state.scanned && opts.equipment.indexOf(state.scanned) !== -1 ? state.scanned : '';
+    var name = remembered(NAME_KEY);
+
+    function optionList(values, selected) {
+      return values.map(function (v) {
+        return '<option value="' + esc(v) + '"' + (v === selected ? ' selected' : '') + '>' +
+          esc(v) + '</option>';
+      }).join('');
+    }
+
+    viewEl.innerHTML =
+      '<div class="formcard">' +
+        (state.create.error ? '<div class="formerr">' + esc(state.create.error) + '</div>' : '') +
+
+        '<label class="field first" for="fEquip">Equipment <span class="req">*</span></label>' +
+        '<select id="fEquip">' +
+          '<option value="">Choose…</option>' + optionList(opts.equipment, chosen) +
+        '</select>' +
+
+        '<div id="itemWrap" hidden>' +
+          '<label class="field" for="fItem">' + esc(opts.itemQuestion || 'Which item, and where is it?') +
+            ' <span class="req">*</span></label>' +
+          '<input type="text" id="fItem" placeholder="Step ladder, Greenhouse 3">' +
+          '<div class="hint">One code covers all the small stuff, so say which one and where.</div>' +
+        '</div>' +
+
+        '<label class="field" for="fPriority">How urgent is it? <span class="req">*</span></label>' +
+        '<select id="fPriority">' +
+          '<option value="">Choose…</option>' + optionList(opts.urgency, '') +
+        '</select>' +
+
+        '<label class="field" for="fProblem">What needs attention? <span class="req">*</span></label>' +
+        '<textarea id="fProblem" placeholder="What is wrong, and anything you noticed"></textarea>' +
+
+        '<label class="field" for="fName">Your name <span class="req">*</span></label>' +
+        '<input type="text" id="fName" value="' + esc(name) + '" placeholder="Who to ask if it needs following up">' +
+
+        '<label class="field" for="fLead">Leadership Team contact</label>' +
+        '<select id="fLead">' + optionList(opts.leadership, 'Any / no preference') + '</select>' +
+
+        '<label class="field">Photo</label>' +
+        '<div class="photorow">' +
+          '<label class="file" for="fPhoto">Add a photo' +
+            '<input type="file" id="fPhoto" accept="image/*" capture="environment">' +
+          '</label>' +
+        '</div>' +
+        '<div id="photoPrev"></div>' +
+
+        '<div style="margin-top:22px">' +
+          '<button class="primary" type="button" id="submitBtn">Submit ticket</button>' +
+          '<button class="secondary" type="button" id="cancelBtn">Cancel</button>' +
+        '</div>' +
+      '</div>';
+
+    var equip = document.getElementById('fEquip');
+    var itemWrap = document.getElementById('itemWrap');
+    function syncItem() {
+      itemWrap.hidden = !(opts.generalEquipment && equip.value === opts.generalEquipment);
+    }
+    equip.addEventListener('change', syncItem);
+    syncItem();
+
+    document.getElementById('fPhoto').addEventListener('change', onPhotoChosen);
+    document.getElementById('cancelBtn').addEventListener('click', closeCreate);
+    document.getElementById('submitBtn').addEventListener('click', submitCreate);
+  }
+
+  /**
+   * Shrink the picture before it leaves the phone. A modern camera file is
+   * several megabytes, and this gets sent over farm signal.
+   */
+  function onPhotoChosen(event) {
+    var file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        var max = 1600;
+        var scale = Math.min(1, max / Math.max(img.width, img.height));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        var dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        state.create.photo = {
+          data: dataUrl.split(',')[1],
+          mimeType: 'image/jpeg',
+          name: file.name,
+          preview: dataUrl,
+          kb: Math.round((dataUrl.length * 3 / 4) / 1024)
+        };
+        showPhotoPreview();
+      };
+      img.onerror = function () {
+        state.create.error = 'That file did not look like a photo.';
+        render();
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function showPhotoPreview() {
+    var wrap = document.getElementById('photoPrev');
+    if (!wrap) return;
+    var photo = state.create.photo;
+    if (!photo) { wrap.innerHTML = ''; return; }
+
+    wrap.innerHTML = '<div class="photoprev">' +
+      '<img src="' + photo.preview + '" alt="">' +
+      '<span class="pname">' + esc(photo.name) + ' · ' + photo.kb + ' KB</span>' +
+      '<button type="button" id="dropPhoto">Remove</button>' +
+    '</div>';
+    document.getElementById('dropPhoto').addEventListener('click', function () {
+      state.create.photo = null;
+      var input = document.getElementById('fPhoto');
+      if (input) input.value = '';
+      showPhotoPreview();
+    });
+  }
+
+  function submitCreate() {
+    if (state.create.submitting) return;
+
+    var payload = {
+      equipment: document.getElementById('fEquip').value,
+      item: (document.getElementById('fItem') || {}).value || '',
+      priority: document.getElementById('fPriority').value,
+      problem: document.getElementById('fProblem').value,
+      reportedBy: document.getElementById('fName').value.trim(),
+      leadership: document.getElementById('fLead').value,
+      photo: state.create.photo
+        ? { data: state.create.photo.data, mimeType: state.create.photo.mimeType }
+        : null
+    };
+
+    // Say what is missing before spending a round trip on it.
+    var missing = !payload.equipment ? 'Choose which equipment this is about.'
+      : !payload.priority ? 'Choose how urgent it is.'
+      : !payload.problem.trim() ? 'Describe what needs attention.'
+      : !payload.reportedBy ? 'Add your name so someone can follow up.'
+      : (state.options.generalEquipment && payload.equipment === state.options.generalEquipment
+          && !payload.item.trim())
+        ? 'Say which item it is and where.'
+        : '';
+    if (missing) {
+      state.create.error = missing;
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
+
+    remember(NAME_KEY, payload.reportedBy);
+
+    state.create.submitting = true;
+    state.create.error = '';
+    var btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = state.create.photo ? 'Sending photo…' : 'Submitting…';
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        state.create.submitting = false;
+        state.create.done = result;
+        state.create.photo = null;
+        // Everything downstream is now out of date.
+        state.dashboard.loaded = false;
+        state.history.loaded = false;
+        loadOpen();
+        render();
+      })
+      .withFailureHandler(function (err) {
+        state.create.submitting = false;
+        state.create.error = errText(err);
+        render();
+        window.scrollTo(0, 0);
+      })
+      .createRequest(payload);
+  }
+
+  // ======================================================================
+  // Open tab
+  // ======================================================================
 
   function openVisible() {
     return state.open.data.requests.filter(function (r) {
@@ -382,15 +823,10 @@
 
     var data = state.open.data;
     renderOpenSubbar();
-
-    var openCount = data.requests.filter(function (r) { return !isClosed(r); }).length;
-    var urgent = data.requests.filter(function (r) { return !isClosed(r) && r.urgent; }).length;
-    countsEl.innerHTML = openCount + ' open' + (urgent ? ' · <span class="flag">' + urgent + ' urgent</span>' : '');
+    updateCounts();
 
     var items = openVisible();
-    var html = data.formUrl
-      ? '<a class="newreq" href="' + esc(data.formUrl) + '" target="_blank" rel="noopener">New request</a>'
-      : '';
+    var html = '';
 
     if (!items.length) {
       html += '<div class="empty">' + (state.open.onlyOpen ? 'Nothing open' : 'Nothing logged') +
@@ -407,6 +843,14 @@
     viewEl.querySelectorAll('.save').forEach(function (btn) {
       btn.addEventListener('click', function () { save(btn); });
     });
+  }
+
+  function updateCounts() {
+    if (!state.open.data) { countsEl.textContent = ''; return; }
+    var open = state.open.data.requests.filter(function (r) { return !isClosed(r); });
+    var urgent = open.filter(function (r) { return r.urgent; }).length;
+    countsEl.innerHTML = open.length + ' open' +
+      (urgent ? ' · <span class="flag">' + urgent + ' urgent</span>' : '');
   }
 
   function renderTabBadge() {
@@ -427,6 +871,11 @@
         return '<option value="' + esc(s) + '"' + (s === r.status ? ' selected' : '') + '>' + esc(s) + '</option>';
       }).join('');
 
+    var extra = '';
+    if (r.photo) {
+      extra += '<a class="photo" href="' + esc(r.photo) + '" target="_blank" rel="noopener">View photo</a>';
+    }
+
     var controls = editable
       ? '<details>' +
           '<summary>Update</summary>' +
@@ -435,7 +884,7 @@
           '<label class="field" for="n' + r.row + '">Work done / notes</label>' +
           '<textarea id="n' + r.row + '" class="notes" placeholder="What was done, parts used, who did it">' +
             esc(r.notes) + '</textarea>' +
-          '<button class="save" type="button">Save</button>' +
+          '<button class="primary save" type="button">Save</button>' +
           '<div class="rowmsg" role="status"></div>' +
         '</details>'
       : (r.notes
@@ -447,7 +896,7 @@
         '<div class="top">' +
           '<div>' +
             '<div class="equipment">' + esc(r.label || r.equipment || 'Equipment not given') + '</div>' +
-            '<div class="ticket">' + esc(r.ticket || '—') + ' · ' + esc(r.when) +
+            '<div class="ticket num">' + esc(r.ticket || '—') + ' · ' + esc(r.when) +
               (isClosed(r) && r.closedWhen ? ' · closed ' + esc(r.closedWhen) : '') + '</div>' +
           '</div>' +
           '<div>' +
@@ -458,6 +907,7 @@
         '<p class="problem">' + esc(r.problem || '(no description)') + '</p>' +
         '<div class="meta">' + esc(r.priority || '') +
           (r.reportedBy ? ' · reported by ' + esc(r.reportedBy) : '') + '</div>' +
+        extra +
         controls +
       '</article>';
   }
@@ -494,11 +944,8 @@
         var urgentBadge = card.querySelector('.badge.urgent');
         if (urgentBadge) urgentBadge.hidden = closed;
 
-        var openCount = state.open.data.requests.filter(function (r) { return !isClosed(r); }).length;
-        var urgent = state.open.data.requests.filter(function (r) { return !isClosed(r) && r.urgent; }).length;
-        countsEl.innerHTML = openCount + ' open' + (urgent ? ' · <span class="flag">' + urgent + ' urgent</span>' : '');
+        updateCounts();
         renderTabBadge();
-        // The dashboard and history now disagree with the sheet; refetch on next view.
         state.dashboard.loaded = false;
         state.history.loaded = false;
       })
@@ -668,7 +1115,7 @@
       return '<div class="barrow">' +
           '<div class="barhead">' +
             '<span class="barname">' + esc(row.name) + '</span>' +
-            '<span class="barval">' + esc(row.display) + '</span>' +
+            '<span class="barval num">' + esc(row.display) + '</span>' +
           '</div>' +
           '<div class="track"><div class="fill' + (hue === 'down' ? ' down' : '') +
             '" style="width:' + pct + '%"></div></div>' +
@@ -695,38 +1142,35 @@
     var b = d.backlog;
     var html = '';
 
-    // --- backlog health: headline numbers, not a chart ---
     html += '<section class="panel">' +
       '<h2>Backlog</h2>' +
       '<p class="caption">Everything not yet closed out.</p>' +
       '<div class="tiles">' +
-        '<div class="tile"><div class="value">' + b.open + '</div><div class="name">open</div></div>' +
-        '<div class="tile' + (b.urgent ? ' alert' : '') + '"><div class="value">' + b.urgent +
+        '<div class="tile"><div class="value num">' + b.open + '</div><div class="name">open</div></div>' +
+        '<div class="tile' + (b.urgent ? ' alert' : '') + '"><div class="value num">' + b.urgent +
           '</div><div class="name">urgent</div></div>' +
-        '<div class="tile' + (b.aging ? ' alert' : '') + '"><div class="value">' + b.aging +
+        '<div class="tile' + (b.aging ? ' alert' : '') + '"><div class="value num">' + b.aging +
           '</div><div class="name">over ' + d.agingAfterDays + 'd</div></div>' +
       '</div>' +
       (b.oldest
-        ? '<div class="oldest"><div class="lead">Oldest still open</div>' +
+        ? '<div class="oldest"><div class="lead eyebrow">Oldest still open</div>' +
             esc(b.oldest.label) + ' — ' + plural(b.oldest.days, 'day') + ' old ' +
-            '<span class="ticket">(' + esc(b.oldest.ticket || 'no ticket') + ', ' +
+            '<span class="ticket num">(' + esc(b.oldest.ticket || 'no ticket') + ', ' +
             esc(b.oldest.status) + ')</span></div>'
         : '') +
       '</section>';
 
-    // --- currently out of service ---
     if (d.downNow && d.downNow.length) {
       html += '<section class="panel">' +
         '<h2>Out of service now</h2>' +
         '<p class="caption">Reported as a safety issue or unusable, still open.</p>' +
         '<ul class="downlist">' + d.downNow.map(function (item) {
           return '<li><span>' + esc(item.label) +
-            '<br><span class="tk">' + esc(item.ticket || 'no ticket') + '</span></span>' +
-            '<span class="days">' + plural(item.days, 'day') + '</span></li>';
+            '<br><span class="tk num">' + esc(item.ticket || 'no ticket') + '</span></span>' +
+            '<span class="days num">' + plural(item.days, 'day') + '</span></li>';
         }).join('') + '</ul></section>';
     }
 
-    // --- repeat offenders ---
     if (d.offenders && d.offenders.length) {
       var maxRecent = Math.max.apply(null, d.offenders.map(function (o) { return o.recent; }).concat([0]));
       html += '<section class="panel">' +
@@ -744,7 +1188,6 @@
         '</section>';
     }
 
-    // --- downtime ---
     if (d.downtime && d.downtime.length) {
       var maxDown = Math.max.apply(null, d.downtime.map(function (o) { return o.downDays; }).concat([0]));
       html += '<section class="panel">' +
@@ -757,11 +1200,10 @@
         '</section>';
     }
 
-    // --- status breakdown, as a table rather than more colour ---
     html += '<section class="panel"><h2>Every request by status</h2>' +
       '<p class="caption">' + plural(b.total, 'request') + ' logged in total.</p>' +
       '<ul class="statuslist">' + b.byStatus.map(function (s) {
-        return '<li><span>' + esc(s.status) + '</span><span class="n">' + s.count + '</span></li>';
+        return '<li><span>' + esc(s.status) + '</span><span class="n num">' + s.count + '</span></li>';
       }).join('') + '</ul></section>';
 
     html += '<p class="stamp">As of ' + esc(d.generatedAt) + '</p>';
@@ -774,20 +1216,31 @@
   // ======================================================================
 
   function render() {
-    titleEl.textContent = state.tab === 'dashboard' ? 'Dashboard'
-      : state.tab === 'history' ? 'Service history' : 'Equipment Maintenance';
+    if (state.create.open) {
+      document.querySelector('header').classList.remove('on-home');
+      renderCreate();
+      return;
+    }
 
-    if (state.tab === 'open') renderOpen();
+    document.querySelector('header').classList.toggle('on-home', state.tab === 'home');
+
+    titleEl.textContent = state.tab === 'dashboard' ? 'Dashboard'
+      : state.tab === 'history' ? 'Service history'
+      : state.tab === 'open' ? 'Open requests'
+      : 'Equipment Maintenance';
+
+    if (state.tab === 'home') renderHome();
+    else if (state.tab === 'open') renderOpen();
     else if (state.tab === 'history') renderHistory();
     else renderDashboard();
   }
 
   function selectTab(tab) {
+    state.create.open = false;
     state.tab = tab;
     document.querySelectorAll('.tabbar button').forEach(function (btn) {
       btn.setAttribute('aria-selected', String(btn.dataset.tab === tab));
     });
-    viewEl.scrollTop = 0;
     window.scrollTo(0, 0);
 
     // A tab that failed to load counts as not loaded, so coming back to it
@@ -803,11 +1256,16 @@
   });
 
   document.getElementById('refresh').addEventListener('click', function () {
-    if (state.tab === 'open') loadOpen();
-    else if (state.tab === 'history') fetchHistory(true);
-    else fetchDashboard();
+    if (state.create.open) return;
+    if (state.tab === 'history') fetchHistory(true);
+    else if (state.tab === 'dashboard') fetchDashboard();
+    else loadOpen();
   });
 
+  // Both fire at once rather than in sequence, so opening Create Ticket
+  // straight after a scan does not wait on the log.
+  loadOptions();
   loadOpen();
+  render();
 })();
 </script>

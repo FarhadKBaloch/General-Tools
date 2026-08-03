@@ -50,6 +50,27 @@ var CONFIG = {
     reportedBy: 'Your name'
   },
 
+  // The equipment the app offers when someone creates a ticket. Keep this in
+  // step with the form's answer options and with the printed QR labels.
+  equipment: ['Tractor', 'Gator', 'Truck', 'Sprayer', 'General equipment'],
+
+  // Urgency options, most serious first. The ones in urgentAnswers below get
+  // the red treatment; these are simply the choices offered.
+  urgencyOptions: [
+    'Safety issue - do not operate',
+    'Down - cannot be used',
+    'Needs attention soon',
+    'Routine / next service'
+  ],
+
+  // Photos attached in the app land in this Drive folder, created on first use.
+  photoFolder: 'Equipment maintenance photos',
+
+  // Anyone on a notification email needs to be able to open the photo, and
+  // they are not all in your Drive. Set false to keep photos private to you —
+  // the link then only works for people you share the folder with.
+  photoLinkSharing: true,
+
   // The catch-all bucket, for step stools, ladders, pallet jacks, hand tools
   // and anything else that breaks too rarely to deserve its own QR code.
   // One QR code covers all of it; the "Which item" answer says what broke.
@@ -89,6 +110,7 @@ var TICKET_COL = 'Ticket';
 var ASSIGNED_COL = 'Assigned to';
 var CLOSED_COL = 'Closed on';
 var NOTES_COL = 'Work done / notes';
+var PHOTO_COL = 'Photo';
 var STATUS_OPTIONS = ['Open', 'In progress', 'Waiting on parts', 'Done', 'Not needed'];
 
 // ===========================================================================
@@ -123,7 +145,9 @@ function responseSheet_() {
 
 /** Append the tracking columns to the right of the form's own columns. */
 function addTrackingColumns_(sheet) {
-  var wanted = [TICKET_COL, STATUS_COL, ASSIGNED_COL, CLOSED_COL, NOTES_COL];
+  // Photo last: if the form already has a 'Photo' upload question the header
+  // is already there and this leaves it alone.
+  var wanted = [TICKET_COL, STATUS_COL, ASSIGNED_COL, CLOSED_COL, NOTES_COL, PHOTO_COL];
   var headers = headerRow_(sheet);
 
   wanted.forEach(function (name) {
@@ -391,14 +415,26 @@ function withLock_(fn) {
   }
 }
 
-/** Runs on every form submission. */
+/**
+ * Runs on every Google Form submission.
+ *
+ * The form is kept as a backup way in; tickets created in the app take the
+ * path below instead. Both end in processNewRequest_ so a request looks the
+ * same however it arrived.
+ */
 function onMaintenanceSubmit(e) {
   var sheet = responseSheet_();
   var row = e && e.range ? e.range.getRow() : sheet.getLastRow();
-  var answers = readAnswers_(e, sheet, row);
+  processNewRequest_(sheet, row, readAnswers_(e, sheet, row));
+}
 
+/**
+ * Give a newly added row its ticket and status, then tell the three people who
+ * need to know. Shared by the form trigger and by the app's Create Ticket.
+ */
+function processNewRequest_(sheet, row, answers) {
   // Allocating the ticket reads the whole column and then writes to it, so it
-  // has to be atomic against another submission arriving at the same moment.
+  // has to be atomic against another request arriving at the same moment.
   var ticket = withLock_(function () {
     // Apps Script retries a trigger after a transient failure. If this row was
     // already given a ticket, keep it rather than renumbering the request and
@@ -428,6 +464,8 @@ function onMaintenanceSubmit(e) {
     htmlBody: htmlBody_(ticket, answers, link, urgent),
     name: 'Equipment Maintenance Log'
   });
+
+  return ticket;
 }
 
 /** Runs on every manual edit; only acts when a Status changes to a closed value. */
@@ -802,10 +840,23 @@ function formatWhen_(value) {
 // gives you can be added to a phone's home screen and behaves like an app.
 // ===========================================================================
 
-/** Serves the mobile page. Requires an HTML file named "webapp" in this project. */
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('webapp')
-    .setTitle('Equipment Maintenance')
+/**
+ * Serves the mobile page. Requires an HTML file named "webapp" in this project.
+ *
+ * The QR sticker on each machine carries ?equipment=<name>. The page itself
+ * runs in a sandboxed iframe and cannot see the address bar, so the value is
+ * read here and baked into the markup for the app to pick up.
+ */
+function doGet(e) {
+  var template = HtmlService.createTemplateFromFile('webapp');
+  var asked = (e && e.parameter && e.parameter.equipment) || '';
+
+  // Only accept a machine we actually know about, so a doctored link cannot
+  // put arbitrary text on the screen.
+  template.scannedEquipment = (CONFIG.equipment || []).indexOf(asked) === -1 ? '' : asked;
+
+  return template.evaluate()
+    .setTitle('Millcreek Equipment Maintenance')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -864,6 +915,7 @@ function logSnapshot_() {
       reportedBy: String(get(v, q.reportedBy) || '').trim(),
       status: status,
       notes: String(get(v, NOTES_COL) || ''),
+      photo: String(get(v, PHOTO_COL) || '').trim(),
       urgent: isUrgent_(get(v, q.priority)),
       closed: closed,
       reportedAt: reportedAt,
@@ -1085,6 +1137,125 @@ function getDashboard() {
     offenders: offenders.slice(0, 8),
     downtime: downtime.slice(0, 8)
   };
+}
+
+/**
+ * What the app needs to build its Create Ticket form. Driven by CONFIG rather
+ * than by what happens to be in the log already, so a machine that has never
+ * broken still appears in the list.
+ */
+function getFormOptions() {
+  var leadership = Object.keys(CONFIG.leadership || {});
+  return {
+    equipment: (CONFIG.equipment || []).slice(),
+    urgency: (CONFIG.urgencyOptions || []).slice(),
+    leadership: leadership.concat(['Any / no preference']),
+    generalEquipment: CONFIG.generalEquipment || '',
+    urgentAnswers: (CONFIG.urgentAnswers || []).slice(),
+    itemQuestion: titleList_(CONFIG.questions.item)[0],
+    photosEnabled: true,
+    formUrl: CONFIG.formUrl || ''
+  };
+}
+
+/**
+ * Create a ticket from the app.
+ *
+ * Appends a row to the same sheet the form writes to, matching by header name
+ * rather than by position so a reordered form cannot scatter the answers, then
+ * hands off to the shared processNewRequest_ for the ticket and the emails.
+ * The form's own trigger does not fire for rows a script appends, which is
+ * exactly why that work is shared rather than living in the trigger.
+ */
+function createRequest(payload) {
+  payload = payload || {};
+
+  var equipment = String(payload.equipment || '').trim();
+  var priority = String(payload.priority || '').trim();
+  var problem = String(payload.problem || '').trim();
+  var reportedBy = String(payload.reportedBy || '').trim();
+  var leadership = String(payload.leadership || '').trim();
+  var item = String(payload.item || '').trim();
+
+  if (!equipment) throw new Error('Choose which equipment this is about.');
+  if ((CONFIG.equipment || []).indexOf(equipment) === -1) {
+    throw new Error('Unknown equipment: ' + equipment);
+  }
+  if (!priority) throw new Error('Choose how urgent it is.');
+  if ((CONFIG.urgencyOptions || []).indexOf(priority) === -1) {
+    throw new Error('Unknown urgency: ' + priority);
+  }
+  if (!problem) throw new Error('Describe what needs attention.');
+  if (!reportedBy) throw new Error('Add your name so someone can follow up.');
+  if (isGeneral_(equipment) && !item) {
+    throw new Error('For general equipment, say which item it is and where.');
+  }
+
+  var sheet = responseSheet_();
+  var headers = headerRow_(sheet);
+  if (!headers.length) throw new Error('The log has no header row. Run setUp first.');
+
+  var q = CONFIG.questions;
+  var values = {};
+  values['Timestamp'] = new Date();
+  values[headerFor_(headers, q.equipment)] = equipment;
+  values[headerFor_(headers, q.item)] = item;
+  values[headerFor_(headers, q.priority)] = priority;
+  values[headerFor_(headers, q.problem)] = problem;
+  values[headerFor_(headers, q.reportedBy)] = reportedBy;
+  values[headerFor_(headers, q.leadership)] = leadership;
+
+  var photoUrl = '';
+  if (payload.photo && payload.photo.data) {
+    photoUrl = savePhoto_(payload.photo, equipment);
+    values[PHOTO_COL] = photoUrl;
+  }
+
+  // One append, built positionally from the header row.
+  var rowValues = headers.map(function (header) {
+    return values[header] === undefined ? '' : values[header];
+  });
+
+  var row = withLock_(function () {
+    sheet.appendRow(rowValues);
+    return sheet.getLastRow();
+  });
+
+  var answers = readAnswers_(null, sheet, row);
+  var ticket = processNewRequest_(sheet, row, answers);
+
+  return { ok: true, ticket: ticket, row: row, photoUrl: photoUrl };
+}
+
+/**
+ * Put an attached photo in Drive and return a link to it.
+ *
+ * Files land in one folder, named after the ticket's machine and the date so
+ * the folder stays browsable. Link sharing is on by default because the people
+ * who get the email are not all in this Drive — turn it off in CONFIG if you
+ * would rather share the folder by hand.
+ */
+function savePhoto_(photo, equipment) {
+  var folderName = CONFIG.photoFolder || 'Equipment maintenance photos';
+  var folders = DriveApp.getFoldersByName(folderName);
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+
+  var mime = String(photo.mimeType || 'image/jpeg');
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HHmm');
+  var extension = (/\/(\w+)$/.exec(mime) || [])[1] || 'jpg';
+  var name = equipment + ' ' + stamp + '.' + extension;
+
+  var blob = Utilities.newBlob(Utilities.base64Decode(photo.data), mime, name);
+  var file = folder.createFile(blob);
+
+  if (CONFIG.photoLinkSharing !== false) {
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (err) {
+      // A domain that forbids link sharing should not lose the whole request.
+    }
+  }
+  return file.getUrl();
 }
 
 /**
