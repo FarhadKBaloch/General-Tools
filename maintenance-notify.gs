@@ -1310,6 +1310,117 @@ function updateRequest(payload) {
 // Handy extras
 // ===========================================================================
 
+/**
+ * Run this after pasting a new version in. It checks the things that are easy
+ * to get wrong in CONFIG and quiet when they are wrong — an urgency listed in
+ * urgentAnswers that no longer matches the options, a catch-all bucket that is
+ * not one of the equipment choices, a column the app expects and cannot find.
+ *
+ * Returns the report as text so it shows in the execution log, and shows it in
+ * the spreadsheet too.
+ */
+function healthCheck() {
+  var problems = [];
+  var notes = [];
+
+  function placeholder(address) {
+    return !address || /example\.com\s*$/i.test(String(address));
+  }
+
+  // --- who gets told ---
+  if (placeholder(CONFIG.facilitiesLead)) problems.push('facilitiesLead is still the example address.');
+  if (placeholder(CONFIG.owner)) problems.push('owner is still the example address.');
+  var leadershipNames = Object.keys(CONFIG.leadership || {});
+  if (!leadershipNames.length) problems.push('leadership is empty — nobody can be picked as the contact.');
+  leadershipNames.forEach(function (name) {
+    if (placeholder(CONFIG.leadership[name])) {
+      problems.push('leadership["' + name + '"] is still an example address.');
+    }
+  });
+  if (placeholder(CONFIG.leadershipFallback)) {
+    problems.push('leadershipFallback is still the example address.');
+  }
+
+  // --- what the app offers ---
+  var equipment = CONFIG.equipment || [];
+  var urgency = CONFIG.urgencyOptions || [];
+  if (!equipment.length) {
+    problems.push('equipment is empty — Create ticket in the app will have nothing to choose.');
+  }
+  if (!urgency.length) {
+    problems.push('urgencyOptions is empty — Create ticket in the app will have nothing to choose.');
+  }
+  if (equipment.length && CONFIG.generalEquipment &&
+      equipment.indexOf(CONFIG.generalEquipment) === -1) {
+    problems.push('generalEquipment ("' + CONFIG.generalEquipment + '") is not one of the ' +
+      'equipment options, so the "which item" question will never appear.');
+  }
+  (CONFIG.urgentAnswers || []).forEach(function (answer) {
+    if (urgency.length && urgency.indexOf(answer) === -1) {
+      problems.push('urgentAnswers has "' + answer + '", which is not one of urgencyOptions — ' +
+        'nothing will ever be flagged urgent by it.');
+    }
+  });
+
+  // --- the sheet ---
+  var sheet = null;
+  try {
+    sheet = responseSheet_();
+  } catch (err) {
+    problems.push(err.message);
+  }
+
+  if (sheet) {
+    var headers = headerRow_(sheet);
+    [TICKET_COL, STATUS_COL, ASSIGNED_COL, CLOSED_COL, NOTES_COL, PHOTO_COL].forEach(function (col) {
+      if (headers.indexOf(col) === -1) problems.push('The log has no "' + col + '" column. Run setUp.');
+    });
+
+    var q = CONFIG.questions;
+    ['equipment', 'priority', 'problem', 'reportedBy', 'leadership'].forEach(function (key) {
+      var wanted = titleList_(q[key]);
+      var found = headerFor_(headers, q[key]);
+      if (headers.indexOf(found) === -1) {
+        problems.push('No column matches the ' + key + ' question (' + wanted.join(' / ') + ').');
+      }
+    });
+    if (headers.indexOf(headerFor_(headers, q.item)) === -1) {
+      notes.push('No "which item" column yet. General-equipment requests will say ' +
+        '"item not specified" until you add that question to the form.');
+    }
+
+    notes.push('Log: ' + sheet.getName() + ', ' + Math.max(sheet.getLastRow() - 1, 0) + ' requests.');
+  }
+
+  // --- triggers ---
+  var installed = {};
+  ScriptApp.getProjectTriggers().forEach(function (t) { installed[t.getHandlerFunction()] = true; });
+  if (!installed.onMaintenanceSubmit) problems.push('The form-submit trigger is missing. Run setUp.');
+  if (!installed.onMaintenanceEdit) problems.push('The edit trigger is missing. Run setUp.');
+
+  var report = problems.length
+    ? 'Found ' + problems.length + ' thing(s) to fix:\n\n• ' + problems.join('\n• ')
+    : 'All good. Nothing in CONFIG or the log looks wrong.';
+  if (notes.length) report += '\n\n' + notes.join('\n');
+
+  Logger.log(report);
+
+  // Show the whole report where it was asked for: a dialog when run from the
+  // spreadsheet menu, the execution log when run from the editor.
+  try {
+    var ui = SpreadsheetApp.getUi();
+    ui.alert('Health check', report, ui.ButtonSet.OK);
+  } catch (err) {
+    try {
+      SpreadsheetApp.getActive().toast(
+        problems.length ? problems.length + ' problem(s) — see the execution log' : 'All good',
+        'Health check', 8);
+    } catch (err2) { /* running from the editor with no sheet attached */ }
+  }
+
+  return report;
+}
+
 /** Run by hand to check your CONFIG addresses without filing a real request. */
 function sendTestEmail() {
   var recipients = recipientsFor_('');
@@ -1330,6 +1441,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Maintenance')
     .addItem('Set up / repair triggers', 'setUp')
+    .addItem('Health check', 'healthCheck')
     .addItem('Send test email', 'sendTestEmail')
     .addToUi();
 }
