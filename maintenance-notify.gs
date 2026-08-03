@@ -74,7 +74,13 @@ var CONFIG = {
   // sent. Without a cap the payload grows with the log forever, and by year
   // three the app is downloading a decade of finished repairs on every open.
   // The full history is always in the sheet.
-  closedHistoryShown: 50
+  closedHistoryShown: 50,
+
+  // Dashboard: an open request older than this many days is counted as
+  // "aging", and the repeat-offender and downtime figures cover this many
+  // days back. A year keeps a full season in view.
+  agingAfterDays: 7,
+  dashboardWindowDays: 365
 };
 
 // Columns this script adds and manages on the response sheet.
@@ -805,18 +811,18 @@ function doGet() {
 }
 
 /**
- * Every request, newest first, as plain objects the page can render as cards.
- * Reads the sheet in one call — reading cell by cell is the usual reason an
- * Apps Script web app feels slow.
+ * Every row of the log, parsed once, newest first.
+ *
+ * The history, search and dashboard endpoints all need the whole log, and
+ * reading the sheet cell by cell is the usual reason an Apps Script web app
+ * feels slow. One getValues() call, one pass, shared by everything below.
  */
-function getRequests() {
+function logSnapshot_() {
   var sheet = responseSheet_();
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    return { requests: [], equipmentList: [], statuses: STATUS_OPTIONS, formUrl: CONFIG.formUrl || '' };
-  }
-
   var headers = headerRow_(sheet);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2 || !headers.length) return { requests: [], equipmentList: [] };
+
   var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
   var q = CONFIG.questions;
 
@@ -827,53 +833,257 @@ function getRequests() {
     return i === undefined ? '' : rowValues[i];
   };
 
-  var requests = [];
-  var equipmentList = {};
-  var closedShown = 0;
-  var closedHidden = 0;
-  var closedLimit = CONFIG.closedHistoryShown;
-  if (typeof closedLimit !== 'number' || closedLimit < 0) closedLimit = 50;
+  var equipmentHeader = headerFor_(headers, q.equipment);
+  var itemHeader = headerFor_(headers, q.item);
 
-  // Walk newest first so the closed requests that survive the cap are the
-  // recent ones.
+  var requests = [];
+  var equipment = {};
+
   for (var r = values.length - 1; r >= 0; r--) {
     var v = values[r];
-    var equipment = String(get(v, headerFor_(headers, q.equipment)) || '').trim();
-    if (equipment) equipmentList[equipment] = true;
+    var name = String(get(v, equipmentHeader) || '').trim();
+    if (name) equipment[name] = true;
 
+    var item = String(get(v, itemHeader) || '').trim();
     var status = String(get(v, STATUS_COL) || 'Open').trim() || 'Open';
-    if (status === 'Done' || status === 'Not needed') {
-      if (closedShown >= closedLimit) { closedHidden++; continue; }
-      closedShown++;
-    }
+    var reportedAt = asTime_(get(v, 'Timestamp'));
+    var closedAt = asTime_(get(v, CLOSED_COL));
+    var closed = (status === 'Done' || status === 'Not needed');
 
-    var timestamp = get(v, 'Timestamp');
-    var item = String(get(v, headerFor_(headers, q.item)) || '').trim();
     requests.push({
       row: r + 2,
       ticket: String(get(v, TICKET_COL) || ''),
-      equipment: equipment,
+      equipment: name,
       item: item,
-      // What the card shows as its heading: for the catch-all bucket that is
-      // the item, not the useless word "General equipment".
-      label: describe_({ equipment: equipment, item: item }),
-      general: isGeneral_(equipment),
+      // What a card shows as its heading: for the catch-all bucket that is the
+      // item, not the useless word "General equipment".
+      label: describe_({ equipment: name, item: item }),
+      general: isGeneral_(name),
       priority: String(get(v, q.priority) || '').trim(),
       problem: String(get(v, q.problem) || '').trim(),
       reportedBy: String(get(v, q.reportedBy) || '').trim(),
       status: status,
       notes: String(get(v, NOTES_COL) || ''),
       urgent: isUrgent_(get(v, q.priority)),
-      when: timestamp instanceof Date ? formatWhen_(timestamp) : String(timestamp || '')
+      closed: closed,
+      reportedAt: reportedAt,
+      closedAt: closed ? closedAt : null,
+      when: reportedAt ? formatWhen_(new Date(reportedAt)) : '',
+      closedWhen: (closed && closedAt) ? formatWhen_(new Date(closedAt)) : ''
     });
   }
 
+  return { requests: requests, equipmentList: Object.keys(equipment).sort() };
+}
+
+/** Milliseconds for a cell that may hold a Date, a string, or nothing. */
+function asTime_(value) {
+  if (!value) return null;
+  var date = (value instanceof Date) ? value : new Date(value);
+  var time = date.getTime();
+  return isNaN(time) ? null : time;
+}
+
+var DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Whole days between two instants, never negative. */
+function daysBetween_(fromTime, toTime) {
+  if (!fromTime || !toTime) return 0;
+  return Math.max(0, Math.floor((toTime - fromTime) / DAY_MS));
+}
+
+/**
+ * The Open tab: every unresolved request, plus a bounded tail of recent closed
+ * ones. Without the cap the payload grows with the log forever.
+ */
+function getRequests() {
+  var snapshot = logSnapshot_();
+  var limit = CONFIG.closedHistoryShown;
+  if (typeof limit !== 'number' || limit < 0) limit = 50;
+
+  var out = [];
+  var closedShown = 0;
+  var closedHidden = 0;
+
+  snapshot.requests.forEach(function (request) {
+    if (request.closed) {
+      if (closedShown >= limit) { closedHidden++; return; }
+      closedShown++;
+    }
+    out.push(request);
+  });
+
   return {
-    requests: requests,
-    equipmentList: Object.keys(equipmentList).sort(),
+    requests: out,
+    equipmentList: snapshot.equipmentList,
     statuses: STATUS_OPTIONS,
     formUrl: CONFIG.formUrl || '',
     closedHidden: closedHidden
+  };
+}
+
+/**
+ * The History tab: the full service record, optionally for one machine,
+ * returned a page at a time so a five-year log never lands on a phone at once.
+ */
+function getHistory(options) {
+  options = options || {};
+  var wanted = String(options.equipment || '').trim();
+  var offset = Math.max(0, Number(options.offset) || 0);
+  var limit = Math.min(Math.max(Number(options.limit) || 25, 1), 100);
+
+  var snapshot = logSnapshot_();
+  var matching = snapshot.requests.filter(function (request) {
+    return !wanted || wanted === 'All' || request.equipment === wanted;
+  });
+
+  return {
+    requests: matching.slice(offset, offset + limit),
+    total: matching.length,
+    offset: offset,
+    hasMore: offset + limit < matching.length,
+    equipmentList: snapshot.equipmentList
+  };
+}
+
+/**
+ * Search the whole log, not just what the phone already holds.
+ *
+ * Matches across ticket, equipment, item, problem, reporter and work notes.
+ * Every word has to match somewhere, so "tractor brake" narrows rather than
+ * widening the way a plain substring search would.
+ */
+function searchRequests(options) {
+  options = options || {};
+  var query = String(options.query || '').trim();
+  var limit = Math.min(Math.max(Number(options.limit) || 50, 1), 200);
+  if (!query) return { requests: [], total: 0, query: '', hasMore: false };
+
+  var terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  var snapshot = logSnapshot_();
+
+  var matching = snapshot.requests.filter(function (request) {
+    var haystack = [
+      request.ticket, request.equipment, request.item, request.problem,
+      request.reportedBy, request.notes, request.status, request.priority
+    ].join(' ').toLowerCase();
+
+    // "7", "MNT-7" and "mnt-0007" should all find ticket MNT-0007.
+    var ticketNumber = (/(\d+)\s*$/.exec(request.ticket) || [])[1];
+    var ticketPlain = ticketNumber ? String(parseInt(ticketNumber, 10)) : '';
+
+    return terms.every(function (term) {
+      if (haystack.indexOf(term) !== -1) return true;
+      var asNumber = term.replace(/^[a-z]+-?/, '').replace(/^0+/, '');
+      return !!ticketPlain && asNumber === ticketPlain;
+    });
+  });
+
+  return {
+    requests: matching.slice(0, limit),
+    total: matching.length,
+    query: query,
+    hasMore: matching.length > limit
+  };
+}
+
+/**
+ * The Dashboard tab. Everything is reduced to totals on the server: shipping
+ * the whole log to a phone so it can count rows would undo the payload cap.
+ */
+function getDashboard() {
+  var snapshot = logSnapshot_();
+  var now = Date.now();
+  var windowDays = CONFIG.dashboardWindowDays;
+  if (typeof windowDays !== 'number' || windowDays < 1) windowDays = 365;
+  var windowStart = now - windowDays * DAY_MS;
+
+  var byStatus = {};
+  STATUS_OPTIONS.forEach(function (status) { byStatus[status] = 0; });
+
+  var open = [];
+  var perEquipment = {};
+
+  snapshot.requests.forEach(function (request) {
+    if (byStatus[request.status] === undefined) byStatus[request.status] = 0;
+    byStatus[request.status]++;
+
+    var name = request.equipment || 'Not given';
+    if (!perEquipment[name]) {
+      perEquipment[name] = { equipment: name, total: 0, recent: 0, open: 0, downDays: 0 };
+    }
+    var stats = perEquipment[name];
+    stats.total++;
+    if (request.reportedAt && request.reportedAt >= windowStart) stats.recent++;
+    if (!request.closed) {
+      stats.open++;
+      open.push(request);
+    }
+
+    // Downtime: how long a machine was unusable, counted only for the reports
+    // that actually take it out of service. Still-open ones count to today.
+    if (request.urgent && request.reportedAt) {
+      var until = request.closed ? (request.closedAt || request.reportedAt) : now;
+      if (until >= windowStart) stats.downDays += daysBetween_(request.reportedAt, until);
+    }
+  });
+
+  open.sort(function (a, b) { return (a.reportedAt || 0) - (b.reportedAt || 0); });
+
+  var agingDays = CONFIG.agingAfterDays;
+  if (typeof agingDays !== 'number' || agingDays < 1) agingDays = 7;
+
+  var aging = 0;
+  var urgentOpen = 0;
+  open.forEach(function (request) {
+    if (request.reportedAt && daysBetween_(request.reportedAt, now) >= agingDays) aging++;
+    if (request.urgent) urgentOpen++;
+  });
+
+  var downNow = open.filter(function (request) { return request.urgent; })
+    .map(function (request) {
+      return {
+        ticket: request.ticket,
+        label: request.label,
+        equipment: request.equipment,
+        priority: request.priority,
+        days: request.reportedAt ? daysBetween_(request.reportedAt, now) : 0
+      };
+    });
+
+  var offenders = Object.keys(perEquipment).map(function (name) { return perEquipment[name]; });
+  offenders.sort(function (a, b) {
+    return (b.recent - a.recent) || (b.total - a.total) || a.equipment.localeCompare(b.equipment);
+  });
+
+  var downtime = offenders.filter(function (stats) { return stats.downDays > 0; })
+    .slice()
+    .sort(function (a, b) { return b.downDays - a.downDays; });
+
+  var oldest = open.length ? open[0] : null;
+
+  return {
+    generatedAt: formatWhen_(new Date(now)),
+    windowDays: windowDays,
+    agingAfterDays: agingDays,
+    backlog: {
+      open: open.length,
+      urgent: urgentOpen,
+      aging: aging,
+      total: snapshot.requests.length,
+      byStatus: STATUS_OPTIONS.map(function (status) {
+        return { status: status, count: byStatus[status] || 0 };
+      }),
+      oldest: oldest ? {
+        ticket: oldest.ticket,
+        label: oldest.label,
+        days: oldest.reportedAt ? daysBetween_(oldest.reportedAt, now) : 0,
+        status: oldest.status
+      } : null
+    },
+    downNow: downNow,
+    offenders: offenders.slice(0, 8),
+    downtime: downtime.slice(0, 8)
   };
 }
 

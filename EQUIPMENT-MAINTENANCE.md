@@ -363,15 +363,58 @@ to the sheet.
 5. Copy the web app URL. On a phone, open it and use **Add to Home Screen** —
    it then launches full-screen with its own icon, like any other app.
 
-What you get:
+The app has three tabs along the bottom, where a thumb can reach them.
 
-- **Open requests as cards**, urgent ones flagged red and sorted to the top of
-  your attention rather than buried in row 47.
+### Open — what needs doing
+
+- **Requests as cards**, urgent ones flagged red rather than buried in row 47.
 - **Filter chips** — open only, or one piece of equipment at a time.
 - **Tap Update** to change status and add notes, then Save. Closing a request
   from the app emails everyone exactly as closing it in the sheet does.
-- **A running count** of what's open and how much of it is urgent.
-- Dark mode, and no sideways scrolling at any phone size.
+- **A running count** of what's open and how much of it is urgent, and a badge
+  on the tab itself when something urgent is waiting.
+
+### History — the full service record, searchable
+
+- **Pick a machine** to see everything ever logged against it, newest first,
+  including what was done about it. This is the tab to open before deciding
+  whether to repair or replace something.
+- **Search** matches ticket number, machine, item, problem text, who reported
+  it, the work notes and the status. Every word has to match somewhere, so
+  `tractor brake` narrows rather than widening.
+- Ticket search is forgiving: `7`, `MNT-7` and `mnt-0007` all find MNT-0007.
+- **It searches the whole log on the server**, not just what your phone has
+  loaded, and returns a page at a time — so a five-year history never lands on
+  a phone at once. History cards are read-only; the Open tab is where things
+  get changed.
+
+### Dashboard — for whoever has to answer for the backlog
+
+- **Backlog**: how many requests are open, how many are urgent, how many have
+  been sitting longer than a week, and which one has been open longest.
+- **Out of service now**: anything reported as a safety issue or unusable and
+  still open, with how many days it has been down.
+- **Requests per machine** over the last twelve months. This is the number that
+  turns "the gator's playing up again" into a decision you can defend.
+- **Days out of service** per machine — the operational cost of a breakdown, as
+  distinct from how often it happens. Still-open ones count to today.
+- **Every request by status**, so the totals reconcile against the sheet.
+
+Everything on the dashboard is counted on the server and only the totals travel
+to the phone, so it stays fast no matter how long the log gets. Two settings in
+`CONFIG` control it:
+
+```js
+agingAfterDays: 7,        // an open request older than this counts as "aging"
+dashboardWindowDays: 365  // how far back the per-machine figures look
+```
+
+The dashboard is visible to anyone who can open the app. There's no sign-in to
+hang a permission on, and a crew member seeing the backlog is usually a good
+thing rather than a risk.
+
+Throughout: dark mode, 44px touch targets, and no sideways scrolling at any
+phone size.
 
 One thing worth knowing: *Execute as Me* means the app reads and writes the
 sheet with your permissions, so people using it don't need access to the
