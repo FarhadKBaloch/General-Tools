@@ -437,9 +437,10 @@ Two small things that matter in practice:
 - **Every request by status**, so the totals reconcile against the sheet.
 
 Everything on the dashboard is counted on the server and only the totals travel
-to the phone, so it stays fast no matter how long the log gets. It is also
-cached for 90 seconds, and any new ticket or status change clears that cache
-immediately — so the numbers never disagree with the list you just changed.
+to the phone, so it stays fast no matter how long the log gets. The dashboard
+and the open list are cached for 90 seconds, and history pages for five minutes.
+Any new ticket or status change clears all of it immediately — so the numbers
+never disagree with the list you just changed.
 
 **Tab switching is instant** because the History and Dashboard tabs are fetched
 quietly in the background as soon as Home has loaded, rather than when you first

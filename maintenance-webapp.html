@@ -477,7 +477,7 @@
     },
     dashboard: { data: null, loaded: false, error: '' },
     prefetched: false,
-    create: { open: false, submitting: false, error: '', done: null, photo: null }
+    create: { open: false, submitting: false, error: '', done: null, photo: null, draft: null }
   };
 
   var tokens = { history: 0 };
@@ -634,11 +634,30 @@
   // Create ticket
   // ======================================================================
 
+  /** Whatever is currently on the Create ticket form, or null if it is not up. */
+  function readCreateForm() {
+    var equip = document.getElementById('fEquip');
+    if (!equip) return null;
+    var val = function (id) {
+      var el = document.getElementById(id);
+      return el ? el.value : '';
+    };
+    return {
+      equipment: equip.value,
+      item: val('fItem'),
+      priority: val('fPriority'),
+      problem: val('fProblem'),
+      reportedBy: val('fName'),
+      leadership: val('fLead')
+    };
+  }
+
   function openCreate() {
     state.create.open = true;
     state.create.error = '';
     state.create.done = null;
     state.create.photo = null;
+    state.create.draft = null;      // a new ticket starts blank
     render();
   }
 
@@ -679,10 +698,16 @@
       return;
     }
 
-    var chosen = state.scanned && opts.equipment.indexOf(state.scanned) !== -1 ? state.scanned : '';
+    // Anything already typed survives a re-render — an error must never cost
+    // someone the paragraph they just wrote about a broken machine.
+    var draft = state.create.draft || {};
+    var chosen = draft.equipment !== undefined ? draft.equipment
+      : (state.scanned && opts.equipment.indexOf(state.scanned) !== -1 ? state.scanned : '');
     // Google only tells the app who the viewer is when the deployment is
     // restricted to the organisation. When it does, that beats anything typed.
-    var name = opts.viewerEmail || remembered(NAME_KEY);
+    var name = draft.reportedBy !== undefined && draft.reportedBy !== ''
+      ? draft.reportedBy
+      : (opts.viewerEmail || remembered(NAME_KEY));
     var fromAccount = !!opts.viewerEmail;
 
     function optionList(values, selected) {
@@ -704,17 +729,19 @@
         '<div id="itemWrap" hidden>' +
           '<label class="field" for="fItem">' + esc(opts.itemQuestion || 'Which item, and where is it?') +
             ' <span class="req">*</span></label>' +
-          '<input type="text" id="fItem" placeholder="Step ladder, Greenhouse 3">' +
+          '<input type="text" id="fItem" value="' + esc(draft.item || '') +
+            '" placeholder="Step ladder, Greenhouse 3">' +
           '<div class="hint">One code covers all the small stuff, so say which one and where.</div>' +
         '</div>' +
 
         '<label class="field" for="fPriority">How urgent is it? <span class="req">*</span></label>' +
         '<select id="fPriority">' +
-          '<option value="">Choose…</option>' + optionList(opts.urgency, '') +
+          '<option value="">Choose…</option>' + optionList(opts.urgency, draft.priority || '') +
         '</select>' +
 
         '<label class="field" for="fProblem">What needs attention? <span class="req">*</span></label>' +
-        '<textarea id="fProblem" placeholder="What is wrong, and anything you noticed"></textarea>' +
+        '<textarea id="fProblem" placeholder="What is wrong, and anything you noticed">' +
+          esc(draft.problem || '') + '</textarea>' +
 
         '<label class="field" for="fName">Reported by <span class="req">*</span></label>' +
         '<input type="text" id="fName" value="' + esc(name) + '" ' +
@@ -724,7 +751,8 @@
           : '') +
 
         '<label class="field" for="fLead">Leadership Team contact</label>' +
-        '<select id="fLead">' + optionList(opts.leadership, 'Any / no preference') + '</select>' +
+        '<select id="fLead">' +
+          optionList(opts.leadership, draft.leadership || 'Any / no preference') + '</select>' +
 
         '<label class="field">Photo</label>' +
         '<div class="photorow">' +
@@ -749,6 +777,7 @@
     syncItem();
 
     document.getElementById('fPhoto').addEventListener('change', onPhotoChosen);
+    if (state.create.photo) showPhotoPreview();
     document.getElementById('cancelBtn').addEventListener('click', closeCreate);
     document.getElementById('submitBtn').addEventListener('click', submitCreate);
   }
@@ -1069,17 +1098,36 @@
 
   var searchTimer = null;
 
+  var subbarChips = '';
+
   function renderHistorySubbar() {
     var h = state.history;
     var names = ['All'].concat(h.equipmentList.length
       ? h.equipmentList
       : (state.open.data ? state.open.data.equipmentList : []));
+    var signature = names.join('\u0000');
+
+    var existing = document.getElementById('search');
+    if (existing && signature === subbarChips) {
+      // Update in place. Replacing the field would take the focus and reset the
+      // caret, which on a phone also shuts the keyboard halfway through a search.
+      if (document.activeElement !== existing && existing.value !== h.query) {
+        existing.value = h.query;
+      }
+      document.getElementById('clearSearch').hidden = !h.query;
+      subbarEl.querySelectorAll('.chip').forEach(function (btn) {
+        btn.setAttribute('aria-pressed', String(btn.dataset.name === h.equipment));
+      });
+      return;
+    }
+    subbarChips = signature;
 
     subbarEl.innerHTML =
       '<div class="searchrow">' +
         '<input id="search" type="search" autocomplete="off" ' +
           'placeholder="Search ticket, machine or problem" value="' + esc(h.query) + '">' +
-        (h.query ? '<button id="clearSearch" type="button" aria-label="Clear search">×</button>' : '') +
+        '<button id="clearSearch" type="button" aria-label="Clear search"' +
+          (h.query ? '' : ' hidden') + '>×</button>' +
       '</div>' +
       '<div class="filters">' + names.map(function (name) {
         return '<button class="chip" type="button" data-name="' + esc(name) +
@@ -1089,19 +1137,17 @@
     var input = document.getElementById('search');
     input.addEventListener('input', function () {
       state.history.query = input.value;
+      document.getElementById('clearSearch').hidden = !input.value;
       clearTimeout(searchTimer);
       // Wait for a pause in typing rather than calling the server per keystroke.
       searchTimer = setTimeout(function () { fetchHistory(true); }, 350);
     });
 
-    var clear = document.getElementById('clearSearch');
-    if (clear) {
-      clear.addEventListener('click', function () {
-        state.history.query = '';
-        clearTimeout(searchTimer);
-        fetchHistory(true);
-      });
-    }
+    document.getElementById('clearSearch').addEventListener('click', function () {
+      state.history.query = '';
+      clearTimeout(searchTimer);
+      fetchHistory(true);
+    });
 
     subbarEl.querySelectorAll('.chip').forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -1252,7 +1298,8 @@
     var stroke = 20;
     var r = (size - stroke) / 2;
     var circ = 2 * Math.PI * r;
-    var gap = total > 1 ? 2 : 0;          // no gap when one segment fills the ring
+    var drawn = segments.filter(function (seg) { return seg.value > 0; }).length;
+    var gap = drawn > 1 ? 2 : 0;          // no notch when one segment is the whole ring
     var offset = 0;
 
     var arcs = segments.filter(function (seg) { return seg.value > 0; }).map(function (seg) {
@@ -1421,6 +1468,11 @@
 
   function render() {
     if (state.create.open) {
+      // Capture before the markup is replaced, so every path that re-renders
+      // the form — a validation message, a server error, options arriving —
+      // keeps what is on screen.
+      var live = readCreateForm();
+      if (live) state.create.draft = live;
       document.querySelector('header').classList.remove('on-home');
       renderCreate();
       return;
@@ -1441,6 +1493,10 @@
 
   function selectTab(tab) {
     state.create.open = false;
+    if (tab !== 'history') {
+      // A pending search for a tab nobody is looking at is a wasted round trip.
+      clearTimeout(searchTimer);
+    }
     state.tab = tab;
     document.querySelectorAll('.tabbar button').forEach(function (btn) {
       btn.setAttribute('aria-selected', String(btn.dataset.tab === tab));

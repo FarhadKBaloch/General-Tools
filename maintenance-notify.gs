@@ -159,8 +159,9 @@ function equipmentList_() {
 
   var names = [];
   var tab = SpreadsheetApp.getActive().getSheetByName(EQUIPMENT_TAB);
-  if (tab && tab.getLastRow() > 1) {
-    tab.getRange(2, 1, tab.getLastRow() - 1, 1).getValues().forEach(function (row) {
+  var lastRow = tab ? tab.getLastRow() : 0;
+  if (lastRow > 1) {
+    tab.getRange(2, 1, lastRow - 1, 1).getValues().forEach(function (row) {
       var name = String(row[0] == null ? '' : row[0]).trim();
       if (name && names.indexOf(name) === -1) names.push(name);
     });
@@ -1033,6 +1034,15 @@ function daysBetween_(fromTime, toTime) {
  * ones. Without the cap the payload grows with the log forever.
  */
 function getRequests() {
+  var cached = cacheGet_('open');
+  if (cached) return cached;
+
+  var built = buildOpenList_();
+  cachePut_('open', built, 90);
+  return built;
+}
+
+function buildOpenList_() {
   var snapshot = logSnapshot_();
   var limit = CONFIG.closedHistoryShown;
   if (typeof limit !== 'number' || limit < 0) limit = 50;
@@ -1068,18 +1078,27 @@ function getHistory(options) {
   var offset = Math.max(0, Number(options.offset) || 0);
   var limit = Math.min(Math.max(Number(options.limit) || 25, 1), 100);
 
+  // Paging through history and switching between machines walks the same few
+  // pages over and over, and each one otherwise re-reads the whole log. The key
+  // carries the generation, so a new ticket still shows up straight away.
+  var key = 'hist:' + wanted + ':' + offset + ':' + limit;
+  var cached = cacheGet_(key);
+  if (cached) return cached;
+
   var snapshot = logSnapshot_();
   var matching = snapshot.requests.filter(function (request) {
     return !wanted || wanted === 'All' || request.equipment === wanted;
   });
 
-  return {
+  var page = {
     requests: matching.slice(offset, offset + limit),
     total: matching.length,
     offset: offset,
     hasMore: offset + limit < matching.length,
     equipmentList: snapshot.equipmentList
   };
+  cachePut_(key, page, 300);
+  return page;
 }
 
 /**
@@ -1142,20 +1161,30 @@ function getDashboard() {
  * ticket or a status change invalidates instantly rather than leaving someone
  * looking at numbers that disagree with the list they just changed.
  */
+var GENERATION = null;
+var BUMPS = 0;
+
 function cacheGeneration_() {
+  // Read once per execution. Script properties are among the slowest calls
+  // available here, and this was being read twice for every cached lookup.
+  if (GENERATION !== null) return GENERATION;
   try {
-    var props = PropertiesService.getScriptProperties();
-    var gen = props.getProperty('gen');
-    return gen || '0';
+    GENERATION = PropertiesService.getScriptProperties().getProperty('gen') || '0';
   } catch (err) {
-    return '0';
+    GENERATION = '0';
   }
+  return GENERATION;
 }
 
 function bumpGeneration_() {
+  // A timestamp rather than a counter, so invalidating costs one write and no
+  // read: we never need to know what the old value was. The suffix matters —
+  // a create and a status change can land in the same millisecond, and two
+  // identical stamps would hand the second one the first one's cached numbers.
   try {
-    var props = PropertiesService.getScriptProperties();
-    props.setProperty('gen', String(Number(props.getProperty('gen') || 0) + 1));
+    var stamp = Date.now() + '.' + (++BUMPS);
+    PropertiesService.getScriptProperties().setProperty('gen', stamp);
+    GENERATION = stamp;
   } catch (err) { /* cache just stays warm a little longer */ }
 }
 
@@ -1396,8 +1425,8 @@ function createRequest(payload) {
   });
 
   var answers = readAnswers_(null, sheet, row);
+  // processNewRequest_ invalidates the cache; both routes go through it.
   var ticket = processNewRequest_(sheet, row, answers);
-  bumpGeneration_();
 
   return { ok: true, ticket: ticket, row: row, photoUrl: photoUrl, reportedByEmail: whoEmail };
 }
