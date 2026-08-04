@@ -1039,7 +1039,7 @@ function logSnapshot_() {
   var requests = [];
   var equipment = {};
 
-  for (var r = values.length - 1; r >= 0; r--) {
+  for (var r = 0; r < values.length; r++) {
     var v = values[r];
     var name = String(get(v, equipmentHeader) || '').trim();
     if (name) equipment[name] = true;
@@ -1074,7 +1074,22 @@ function logSnapshot_() {
     });
   }
 
+  // Newest first, ordered by when each was reported — not by physical row order,
+  // which now changes as the sheet is kept sorted (and which a manual re-sort or
+  // a partial sort could leave in any state). Ties — the same second, or a row
+  // with no timestamp — fall back to the ticket number, which only ever climbs.
+  requests.sort(function (a, b) {
+    var byTime = (b.reportedAt || 0) - (a.reportedAt || 0);
+    return byTime || (ticketNumber_(b.ticket) - ticketNumber_(a.ticket));
+  });
+
   return { requests: requests, equipmentList: Object.keys(equipment).sort() };
+}
+
+/** The trailing number in a ticket like MNT-0007, or 0 if there isn't one. */
+function ticketNumber_(ticket) {
+  var m = /(\d+)\s*$/.exec(String(ticket || ''));
+  return m ? parseInt(m[1], 10) : 0;
 }
 
 /** Milliseconds for a cell that may hold a Date, a string, or nothing. */
