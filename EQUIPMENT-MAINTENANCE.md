@@ -691,13 +691,43 @@ rename it.
 
 ### Two behaviours worth knowing
 
-- **Ticket numbers continue from the highest in the log**, rather than being
-  derived from the row number. The old scheme handed out a duplicate ID after
-  anyone deleted a row.
+- **The log keeps newest at the top.** Every new ticket re-sorts the sheet by
+  its Timestamp so the most recent request is always at row 2 — you never scroll
+  through five years of history to find today's. Rows move whenever a ticket is
+  filed, which is why nothing keys off a row number (see below). The phone app
+  already showed newest-first; this makes the raw sheet match.
+- **Ticket numbers only ever go up.** The next number is one past the highest
+  ever issued — remembered even across deletions — not one past the highest
+  still in the sheet. So deleting a request never lets its number be handed out
+  again, and no two requests can share a number.
 - **The phone app loads the 50 most recent closed requests**, not all of them,
   and says so when it trims. Open requests are always shown in full, and the
   History tab searches the whole log regardless. Change it with
   `closedHistoryShown`.
+
+### Deleting a row, and tidying the log
+
+You can delete a row straight from the Google Sheet — select it, right-click,
+**Delete row** — and nothing breaks:
+
+- **The request is simply gone** from the app, the counts, the dashboard and
+  search on the next load. Nothing else shifts or corrupts; the rows below just
+  move up.
+- **Updates still land on the right request.** The app finds a request by its
+  ticket, not by its row position, so even if a delete (or a new submission)
+  moves everything around while someone has the list open on their phone, tapping
+  "Done" still updates the ticket they meant — not whatever row now sits in its
+  place. If the request they were looking at was the one deleted, they're told it
+  no longer exists and to refresh.
+- **The number is not reused.** Because ticket numbers track a high-water mark,
+  deleting the newest ticket and then filing another does not reissue the deleted
+  number.
+
+Two cautions. Deleting is permanent — there's no undo once you move on, so if you
+only want it out of sight, set its Status to **Not needed** instead; it drops off
+the open list but stays in the history. And don't delete the **header row** (row
+1) or the tracking columns; those are what the app reads. If you ever do,
+re-running `setUp` puts the columns back.
 
 ### If your log still says "Vehicle"
 
@@ -844,10 +874,13 @@ Check that the form is linked to the sheet and that at least one response
 exists. If the sheet has rows but the app is empty, the tracking columns are
 missing — run `setUp` again.
 
-**Saving in the web app says "The log changed since this list was loaded".**
-Someone deleted or inserted a row while your phone had the list open, so the
-row numbers shifted. This is the safety check doing its job rather than writing
-your update onto someone else's request — tap ↻ to refresh and redo it.
+**Saving in the web app says "That request no longer exists. Pull down to
+refresh."**
+The ticket you were editing was deleted from the sheet while your phone had the
+list open. Ordinary reordering — a new ticket arriving, or an unrelated row being
+deleted — no longer causes this: the app follows a ticket by its number wherever
+it moves. You only see this when the specific request is actually gone. Tap ↻ to
+refresh.
 
 **Closing a request in the web app didn't email anyone.**
 Check `notifyOnClose` is `true` in `CONFIG`. Note that closing it *twice* only
