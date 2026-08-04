@@ -481,16 +481,28 @@ The rest of the Create ticket form still comes from `CONFIG`:
 
 ```js
 urgencyOptions: [ ... ],              // most serious first
-photoFolder: 'Equipment maintenance photos',
+photoFolderId: '1EsuTNZZf2bbdlcEaKAP7ELqvAtbYLC9c',  // a folder pinned by ID
+photoFolder: 'Equipment maintenance photos',         // used only if the ID is blank
 photoLinkSharing: true                // see below
 ```
 
-> **On `photoLinkSharing`.** Photos go into a folder in *your* Drive, and the
-> people getting the email aren't all in it. With this on, each photo gets a
+> **On `photoFolderId`.** Set this to send every photo straight into one
+> existing Drive folder. The ID is the last part of the folder's URL —
+> `https://drive.google.com/drive/folders/`**`THIS_PART`**`?usp=drive_link`.
+> The account that runs the web app (the one you picked under *Execute as: Me*)
+> must be able to **edit** that folder, so either it owns the folder or the
+> folder is shared with it as an editor. Leave `photoFolderId` as `''` to go
+> back to the old behaviour — find, or create on first use, a folder named by
+> `photoFolder`. If the ID is ever wrong or unreadable, the photo still saves
+> to the named folder rather than being lost, and `healthCheck` flags the bad
+> ID so you know.
+
+> **On `photoLinkSharing`.** Photos go into the folder above, and the people
+> getting the email aren't all in it. With this on, each photo gets a
 > view-only link that works for anyone who has it — which is what makes the
-> link in the email usable. Turn it off if you'd rather share the folder by
-> hand; the photo is still saved and still linked, it just won't open for
-> everyone. Nothing else in the app is affected either way.
+> **View the photo** button in the email usable. Turn it off if you'd rather
+> share the folder by hand; the photo is still saved and still linked, it just
+> won't open for everyone. Nothing else in the app is affected either way.
 
 The dashboard is visible to anyone who can open the app. There's no sign-in to
 hang a permission on, and a crew member seeing the backlog is usually a good

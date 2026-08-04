@@ -65,7 +65,15 @@ var CONFIG = {
     'Routine / next service'
   ],
 
-  // Photos attached in the app land in this Drive folder, created on first use.
+  // Photos attached in the app land in this Drive folder.
+  //
+  // Pin an existing folder by ID and every photo goes straight into it. The ID
+  // is the last part of the folder's URL:
+  //   https://drive.google.com/drive/folders/THIS_PART?usp=drive_link
+  // The account that runs the web app (Execute as: Me) must be able to edit that
+  // folder. Leave photoFolderId '' to fall back to finding-or-creating a folder
+  // by the name below instead.
+  photoFolderId: '1EsuTNZZf2bbdlcEaKAP7ELqvAtbYLC9c',
   photoFolder: 'Equipment maintenance photos',
 
   // Anyone on a notification email needs to be able to open the photo, and
@@ -1474,15 +1482,14 @@ function createRequest(payload) {
 /**
  * Put an attached photo in Drive and return a link to it.
  *
- * Files land in one folder, named after the ticket's machine and the date so
- * the folder stays browsable. Link sharing is on by default because the people
+ * Files are named after the ticket's machine and the date so the folder stays
+ * browsable. A folder pinned by ID in CONFIG is used as-is; otherwise one is
+ * found or created by name. Link sharing is on by default because the people
  * who get the email are not all in this Drive — turn it off in CONFIG if you
  * would rather share the folder by hand.
  */
 function savePhoto_(photo, equipment) {
-  var folderName = CONFIG.photoFolder || 'Equipment maintenance photos';
-  var folders = DriveApp.getFoldersByName(folderName);
-  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+  var folder = photoFolder_();
 
   var mime = String(photo.mimeType || 'image/jpeg');
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HHmm');
@@ -1500,6 +1507,28 @@ function savePhoto_(photo, equipment) {
     }
   }
   return file.getUrl();
+}
+
+/**
+ * The folder photos go into: a folder pinned by ID if CONFIG.photoFolderId is
+ * set, otherwise found-or-created by name.
+ *
+ * A bad or inaccessible ID throws from getFolderById, which would lose the
+ * photo silently on the by-name path; catch it and fall back so a mistyped ID
+ * is a folder-in-the-wrong-place problem, not a lost-photo one.
+ */
+function photoFolder_() {
+  var id = String(CONFIG.photoFolderId || '').trim();
+  if (id) {
+    try {
+      return DriveApp.getFolderById(id);
+    } catch (err) {
+      // Fall through to the named folder below rather than dropping the photo.
+    }
+  }
+  var folderName = CONFIG.photoFolder || 'Equipment maintenance photos';
+  var folders = DriveApp.getFoldersByName(folderName);
+  return folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
 }
 
 /**
@@ -1639,6 +1668,19 @@ function healthCheck() {
     }
 
     notes.push('Log: ' + sheet.getName() + ', ' + Math.max(sheet.getLastRow() - 1, 0) + ' requests.');
+  }
+
+  // --- the photo folder, if one is pinned by ID ---
+  var folderId = String(CONFIG.photoFolderId || '').trim();
+  if (folderId) {
+    try {
+      var pinned = DriveApp.getFolderById(folderId);
+      notes.push('Photos go to the Drive folder "' + pinned.getName() + '".');
+    } catch (err) {
+      problems.push('photoFolderId "' + folderId + '" is not a folder this account can ' +
+        'open. Photos would go to a folder named "' + (CONFIG.photoFolder || '') +
+        '" instead. Check the ID, or that the folder is shared with whoever runs the app.');
+    }
   }
 
   // --- triggers ---
