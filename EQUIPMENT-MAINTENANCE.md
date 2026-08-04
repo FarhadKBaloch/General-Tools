@@ -385,12 +385,21 @@ answered.
 
 Two small things that matter in practice:
 
-- **The reporter's name is remembered on that phone**, so it's typed once rather
-  than every time.
+- **Reported by fills itself in** with the signed-in person's work address, so
+  nobody types their name and the notification email can be replied to
+  straight back to them. It stays editable, for filing on someone else's
+  behalf. **This only works if the web app's access is restricted to your
+  organisation** — see the trade below. When it can't tell who the viewer is,
+  the field falls back to the name remembered on that phone.
 - **A photo can be attached** — a cracked weld is worth more than a paragraph.
   It's resized on the phone before it's sent (long edge 1600px, JPEG), because a
   raw camera file is several megabytes over farm signal. The photo lands in a
-  Drive folder and the link goes into the sheet, the email, and the request card.
+  Drive folder and the link goes into the sheet, the request card, and the email
+  as a **View the photo** button.
+
+  The photo is saved only once the request is safely on the sheet, and if Drive
+  is having a bad day the ticket still goes in — the app says the photo didn't
+  upload rather than losing the whole report.
 
 ### Open — what needs doing
 
@@ -417,8 +426,13 @@ Two small things that matter in practice:
 
 ### Dashboard — for whoever has to answer for the backlog
 
-- **Backlog**: how many requests are open, how many are urgent, how many have
-  been sitting longer than a week, and which one has been open longest.
+- **Backlog**: a single large figure for what's open, with two ring meters
+  qualifying it — how many are urgent, and how many have been sitting longer
+  than a week — plus the oldest one still open.
+- **Where the backlog sits**: a ring showing the open requests split by stage.
+  Deliberately only the *live* states: a ring of every status ever logged would
+  be nine-tenths "Done" and answer nothing. Every segment is named and counted
+  in the legend beside it, so it never has to be read by colour alone.
 - **Out of service now**: anything reported as a safety issue or unusable and
   still open, with how many days it has been down.
 - **Requests per machine** over the last twelve months. This is the number that
@@ -428,7 +442,15 @@ Two small things that matter in practice:
 - **Every request by status**, so the totals reconcile against the sheet.
 
 Everything on the dashboard is counted on the server and only the totals travel
-to the phone, so it stays fast no matter how long the log gets. Two settings in
+to the phone, so it stays fast no matter how long the log gets. The dashboard
+and the open list are cached for 90 seconds, and history pages for five minutes.
+Any new ticket or status change clears all of it immediately — so the numbers
+never disagree with the list you just changed.
+
+**Tab switching is instant** because the History and Dashboard tabs are fetched
+quietly in the background as soon as Home has loaded, rather than when you first
+tap them. On Apps Script the first request of a session carries the cold start;
+warming the others while someone is still reading Home hides it. Two settings in
 `CONFIG` control it:
 
 ```js
@@ -436,26 +458,51 @@ agingAfterDays: 7,        // an open request older than this counts as "aging"
 dashboardWindowDays: 365  // how far back the per-machine figures look
 ```
 
-The Create ticket form is built from `CONFIG` too, so a machine that has never
-broken still appears in the list:
+### The Equipment tab — changing the fleet without redeploying
+
+`setUp` creates an **Equipment** tab in the spreadsheet, seeded from
+`CONFIG.equipment`. From then on **that tab is the source of truth**: one
+machine per row, and the app reads it fresh every time it loads.
+
+That matters because a fleet list changes — machines get renamed, teams get
+split — and everything else in `CONFIG` only reaches the app when you create a
+**new deployment version**. Equipment is the setting most likely to change and
+the one you least want to redeploy for, so it lives where you can edit it.
+
+To add or rename a machine: type it on the tab. That's the whole job. The next
+person to open the app sees it. (Renaming does not rewrite history — old
+requests keep the old name, which is correct: that is what they were filed
+against. Print a new sticker for the new name.)
+
+Blank rows and duplicates are ignored, and names are trimmed. If the tab is
+deleted the script falls back to `CONFIG.equipment`, so nothing breaks.
+
+The rest of the Create ticket form still comes from `CONFIG`:
 
 ```js
-equipment: ['Tractor', 'Gator', 'Truck', 'Sprayer', 'General equipment'],
 urgencyOptions: [ ... ],              // most serious first
-photoFolder: 'Equipment maintenance photos',
+photoFolderId: '1EsuTNZZf2bbdlcEaKAP7ELqvAtbYLC9c',  // a folder pinned by ID
+photoFolder: 'Equipment maintenance photos',         // used only if the ID is blank
 photoLinkSharing: true                // see below
 ```
 
-Keep `equipment` in step with the form's answer options and with the printed
-labels — a name the script doesn't recognise is rejected rather than filed
-under something wrong.
+> **On `photoFolderId`.** Set this to send every photo straight into one
+> existing Drive folder. The ID is the last part of the folder's URL —
+> `https://drive.google.com/drive/folders/`**`THIS_PART`**`?usp=drive_link`.
+> The account that runs the web app (the one you picked under *Execute as: Me*)
+> must be able to **edit** that folder, so either it owns the folder or the
+> folder is shared with it as an editor. Leave `photoFolderId` as `''` to go
+> back to the old behaviour — find, or create on first use, a folder named by
+> `photoFolder`. If the ID is ever wrong or unreadable, the photo still saves
+> to the named folder rather than being lost, and `healthCheck` flags the bad
+> ID so you know.
 
-> **On `photoLinkSharing`.** Photos go into a folder in *your* Drive, and the
-> people getting the email aren't all in it. With this on, each photo gets a
+> **On `photoLinkSharing`.** Photos go into the folder above, and the people
+> getting the email aren't all in it. With this on, each photo gets a
 > view-only link that works for anyone who has it — which is what makes the
-> link in the email usable. Turn it off if you'd rather share the folder by
-> hand; the photo is still saved and still linked, it just won't open for
-> everyone. Nothing else in the app is affected either way.
+> **View the photo** button in the email usable. Turn it off if you'd rather
+> share the folder by hand; the photo is still saved and still linked, it just
+> won't open for everyone. Nothing else in the app is affected either way.
 
 The dashboard is visible to anyone who can open the app. There's no sign-in to
 hang a permission on, and a crew member seeing the backlog is usually a good
@@ -470,6 +517,15 @@ spreadsheet itself — which is usually what you want. The flip side is that
 anyone with the URL can update requests. For an internal maintenance log that's
 the same trust model as the form itself, but it is a deliberate choice rather
 than an accident.
+
+> **The trade behind the auto-filled address.** Google only tells the script
+> who is looking when the deployment's *Who has access* is **Anyone within
+> your organisation**. Set to **Anyone**, every viewer is anonymous: the field
+> is typed by hand and the notification has no reply-to. Restricting access
+> makes the app identify people properly, but locks out anyone without a
+> company Google account — seasonal crew, most often. Pick whichever costs you
+> less; both work, and `CONFIG.workEmailDomain` guards against someone signed
+> into a personal account being recorded as the reporter.
 
 > **If you deploy an updated version later**, use **Deploy → Manage deployments
 > → Edit → Version: New version**. Creating a *new deployment* instead mints a
@@ -656,6 +712,12 @@ equipment: ['Equipment', 'Vehicle'],
 It looks for `Equipment` first and falls back to `Vehicle`, so a season of
 history under the old header keeps reading correctly. Leave both in the list.
 
+The same applies to any question you reword. If a column in the log matches
+none of the accepted wordings, **Create ticket** refuses the request and names
+the column, rather than filing a ticket with a blank machine on it and emailing
+everyone about nothing. Either rename the column back, or add the new wording to
+the list in `CONFIG.questions`.
+
 ### Going back
 
 Paste the old script over the new one and run `setUp`. Everything this version
@@ -764,6 +826,18 @@ before deploying. Both files must be in the same Apps Script project.
 Working as intended — it loads the 50 most recent closed requests so the
 payload does not grow with the log forever. Raise `closedHistoryShown` in
 `CONFIG` if you want more, or open the sheet for the full history.
+
+**I changed something in `CONFIG` and the app still shows the old value.**
+The app serves the **last deployed version**, not whatever is currently in the
+editor. Do **Deploy → Manage deployments → pencil → Version: New version**.
+`healthCheck` reads the editor's code, so it will happily say *All good* while
+the app is still running last week's settings — it now says so in its report.
+The one exception is the equipment list, which is read live from the Equipment
+tab and needs no redeploy.
+
+**The badge next to the Open tab.**
+It counts **open requests**, and turns red when any of them are urgent. Grey
+with a number means work outstanding but nothing on fire.
 
 **The web app loads but shows no requests.**
 Check that the form is linked to the sheet and that at least one response

@@ -50,8 +50,10 @@ var CONFIG = {
     reportedBy: 'Your name'
   },
 
-  // The equipment the app offers when someone creates a ticket. Keep this in
-  // step with the form's answer options and with the printed QR labels.
+  // The starting equipment list. setUp copies this into an "Equipment" tab in
+  // the spreadsheet, and from then on THE TAB IS THE SOURCE OF TRUTH — edit it
+  // there and the app picks the change up immediately, with no redeploy. This
+  // list is only the seed, and the fallback if the tab is deleted.
   equipment: ['Tractor', 'Gator', 'Truck', 'Sprayer', 'General equipment'],
 
   // Urgency options, most serious first. The ones in urgentAnswers below get
@@ -63,7 +65,15 @@ var CONFIG = {
     'Routine / next service'
   ],
 
-  // Photos attached in the app land in this Drive folder, created on first use.
+  // Photos attached in the app land in this Drive folder.
+  //
+  // Pin an existing folder by ID and every photo goes straight into it. The ID
+  // is the last part of the folder's URL:
+  //   https://drive.google.com/drive/folders/THIS_PART?usp=drive_link
+  // The account that runs the web app (Execute as: Me) must be able to edit that
+  // folder. Leave photoFolderId '' to fall back to finding-or-creating a folder
+  // by the name below instead.
+  photoFolderId: '1EsuTNZZf2bbdlcEaKAP7ELqvAtbYLC9c',
   photoFolder: 'Equipment maintenance photos',
 
   // Anyone on a notification email needs to be able to open the photo, and
@@ -80,6 +90,15 @@ var CONFIG = {
   // Priority answers that should mark the email as high importance and put a
   // flag in the subject line. Match your form's wording.
   urgentAnswers: ['Safety issue - do not operate', 'Down - cannot be used'],
+
+  // Work email domain. When someone opens the app signed in with an address in
+  // this domain, "Reported by" fills itself in and the notification email can be
+  // replied to directly. Leave blank to accept any signed-in address.
+  //
+  // Google only tells the script who the viewer is when the web app's access is
+  // restricted to your organisation. Deployed as "Anyone", every viewer is
+  // anonymous and the field falls back to being typed by hand.
+  workEmailDomain: 'millcreekplants.com',
 
   // Prefix for generated ticket IDs, e.g. MNT-0007.
   ticketPrefix: 'MNT',
@@ -111,6 +130,7 @@ var ASSIGNED_COL = 'Assigned to';
 var CLOSED_COL = 'Closed on';
 var NOTES_COL = 'Work done / notes';
 var PHOTO_COL = 'Photo';
+var EQUIPMENT_TAB = 'Equipment';
 var STATUS_OPTIONS = ['Open', 'In progress', 'Waiting on parts', 'Done', 'Not needed'];
 
 // ===========================================================================
@@ -123,11 +143,63 @@ var STATUS_OPTIONS = ['Open', 'In progress', 'Waiting on parts', 'Done', 'Not ne
  */
 function setUp() {
   var sheet = responseSheet_();
+  buildEquipmentTab_();
   addTrackingColumns_(sheet);
   applyReadableFormatting_(sheet);
   buildMobileTab_(sheet);
   installTriggers_();
   SpreadsheetApp.getActive().toast('Maintenance log is set up and watching for submissions.');
+}
+
+/**
+ * The equipment the app offers, read from the "Equipment" tab.
+ *
+ * Kept in the spreadsheet rather than in this file on purpose: a fleet list
+ * changes — machines get renamed, teams get split — and needing a code edit
+ * and a redeploy for that is how an app ends up showing names nobody uses any
+ * more. Editing the tab takes effect on the next page load.
+ *
+ * Falls back to CONFIG.equipment if the tab is missing or empty, so nothing
+ * breaks if someone deletes it.
+ */
+function equipmentList_() {
+  if (EQUIPMENT_CACHE) return EQUIPMENT_CACHE;
+
+  var names = [];
+  var tab = SpreadsheetApp.getActive().getSheetByName(EQUIPMENT_TAB);
+  var lastRow = tab ? tab.getLastRow() : 0;
+  if (lastRow > 1) {
+    tab.getRange(2, 1, lastRow - 1, 1).getValues().forEach(function (row) {
+      var name = String(row[0] == null ? '' : row[0]).trim();
+      if (name && names.indexOf(name) === -1) names.push(name);
+    });
+  }
+  if (!names.length) names = (CONFIG.equipment || []).slice();
+
+  EQUIPMENT_CACHE = names;
+  return names;
+}
+
+var EQUIPMENT_CACHE = null;
+
+/** Create the Equipment tab on first run, seeded from CONFIG. Never overwrites. */
+function buildEquipmentTab_() {
+  var ss = SpreadsheetApp.getActive();
+  var tab = ss.getSheetByName(EQUIPMENT_TAB);
+  if (tab) return;   // already yours to edit — leave it alone
+
+  tab = ss.insertSheet(EQUIPMENT_TAB);
+  tab.getRange('A1').setValue('Equipment').setFontWeight('bold').setBackground('#e8efe9');
+  tab.getRange('B1').setValue(
+    'One machine per row. The app reads this list every time it loads, so ' +
+    'adding or renaming here needs no redeploy. Names must match the form\'s ' +
+    'answer options and the printed QR labels.'
+  ).setFontColor('#6b7472').setFontSize(9);
+
+  var seed = (CONFIG.equipment || []).map(function (name) { return [name]; });
+  if (seed.length) tab.getRange(2, 1, seed.length, 1).setValues(seed);
+  tab.setColumnWidth(1, 220);
+  tab.setFrozenRows(1);
 }
 
 /** The form-responses tab. Uses the first sheet that has a Timestamp header. */
@@ -150,12 +222,15 @@ function addTrackingColumns_(sheet) {
   var wanted = [TICKET_COL, STATUS_COL, ASSIGNED_COL, CLOSED_COL, NOTES_COL, PHOTO_COL];
   var headers = headerRow_(sheet);
 
+  var added = false;
   wanted.forEach(function (name) {
     if (headers.indexOf(name) !== -1) return;
     var col = sheet.getLastColumn() + 1;
     sheet.getRange(1, col).setValue(name).setFontWeight('bold');
     headers.push(name);
+    added = true;
   });
+  if (added) forgetHeaders_();
 
   // A dropdown on Status keeps the values consistent enough to filter on.
   var statusCol = headerRow_(sheet).indexOf(STATUS_COL) + 1;
@@ -433,6 +508,7 @@ function onMaintenanceSubmit(e) {
  * need to know. Shared by the form trigger and by the app's Create Ticket.
  */
 function processNewRequest_(sheet, row, answers) {
+  bumpGeneration_();   // a form submission changes the numbers too
   // Allocating the ticket reads the whole column and then writes to it, so it
   // has to be atomic against another request arriving at the same moment.
   var ticket = withLock_(function () {
@@ -544,6 +620,7 @@ function readAnswers_(e, sheet, row) {
     reportedBy: lookup_(named, q.reportedBy),
     email: (e && e.response ? tryRespondentEmail_(e) : '') || lookup_(named, 'Email Address'),
     timestamp: lookup_(named, 'Timestamp') || new Date(),
+    photo: lookup_(named, PHOTO_COL),
     extras: extraAnswers_(named)
   };
 }
@@ -630,7 +707,7 @@ function extraAnswers_(named) {
     titleList_(CONFIG.questions[k]).forEach(function (title) { known.push(normalise_(title)); });
   });
   known.push('timestamp', 'email address');
-  [TICKET_COL, STATUS_COL, ASSIGNED_COL, CLOSED_COL, NOTES_COL].forEach(function (c) {
+  [TICKET_COL, STATUS_COL, ASSIGNED_COL, CLOSED_COL, NOTES_COL, PHOTO_COL].forEach(function (c) {
     known.push(normalise_(c));
   });
 
@@ -719,10 +796,27 @@ function nextTicketId_(sheet) {
  * Google mails the owner a failure notice.
  */
 function headerRow_(sheet) {
+  // Memoised for the life of one execution. Every readCell_/writeCell_ needs
+  // the header row to find its column, so a single form submission was reading
+  // row 1 half a dozen times over. Nothing else changes the headers mid-run
+  // except addTrackingColumns_, which clears this explicitly.
+  var key = sheet.getSheetId();
+  if (HEADER_CACHE[key]) return HEADER_CACHE[key];
+
   var lastColumn = sheet.getLastColumn();
   if (lastColumn < 1) return [];
-  return sheet.getRange(1, 1, 1, lastColumn).getValues()[0]
+
+  var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0]
     .map(function (h) { return String(h).trim(); });
+  HEADER_CACHE[key] = headers;
+  return headers;
+}
+
+var HEADER_CACHE = {};
+
+/** Call after changing the header row, so the next read sees the new columns. */
+function forgetHeaders_() {
+  HEADER_CACHE = {};
 }
 
 function writeCell_(sheet, row, headerName, value) {
@@ -771,6 +865,8 @@ function plainBody_(ticket, a, link) {
     lines.push('', x.label + ':', x.value);
   });
 
+  if (a.photo) lines.push('', 'Photo:', a.photo);
+
   lines.push('', 'Open the log to update the status:', link);
   return lines.join('\n');
 }
@@ -798,6 +894,15 @@ function htmlBody_(ticket, a, link, urgent) {
       '<td style="padding:6px 0;font-weight:600">' + esc(r[1]) + '</td></tr>';
   }).join('');
 
+  // A photo is the reason someone bothered to take one: it has to be one tap
+  // away, not a URL printed as text in a table cell.
+  var photoBlock = a.photo
+    ? '<p style="margin:0 0 18px"><a href="' + esc(a.photo) + '" ' +
+      'style="display:inline-block;border:1px solid #d7ded9;border-radius:6px;' +
+      'padding:8px 14px;color:#2f6f4e;text-decoration:none;font-weight:600;font-size:14px">' +
+      'View the photo</a></p>'
+    : '';
+
   return '' +
     '<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;' +
     'max-width:560px;color:#1c2321;line-height:1.5">' +
@@ -819,6 +924,7 @@ function htmlBody_(ticket, a, link, urgent) {
           'color:#5f6b66;margin-bottom:6px">Problem</div>' +
         '<div style="white-space:pre-wrap">' + esc(a.problem || '(no description given)') + '</div>' +
       '</div>' +
+      photoBlock +
       '<a href="' + link + '" ' +
         'style="display:inline-block;background:#2f6f4e;color:#fff;text-decoration:none;' +
         'font-weight:600;padding:10px 18px;border-radius:6px">Open the maintenance log</a>' +
@@ -853,7 +959,7 @@ function doGet(e) {
 
   // Only accept a machine we actually know about, so a doctored link cannot
   // put arbitrary text on the screen.
-  template.scannedEquipment = (CONFIG.equipment || []).indexOf(asked) === -1 ? '' : asked;
+  template.scannedEquipment = equipmentList_().indexOf(asked) === -1 ? '' : asked;
 
   return template.evaluate()
     .setTitle('Millcreek Equipment Maintenance')
@@ -949,6 +1055,15 @@ function daysBetween_(fromTime, toTime) {
  * ones. Without the cap the payload grows with the log forever.
  */
 function getRequests() {
+  var cached = cacheGet_('open');
+  if (cached) return cached;
+
+  var built = buildOpenList_();
+  cachePut_('open', built, 90);
+  return built;
+}
+
+function buildOpenList_() {
   var snapshot = logSnapshot_();
   var limit = CONFIG.closedHistoryShown;
   if (typeof limit !== 'number' || limit < 0) limit = 50;
@@ -984,18 +1099,27 @@ function getHistory(options) {
   var offset = Math.max(0, Number(options.offset) || 0);
   var limit = Math.min(Math.max(Number(options.limit) || 25, 1), 100);
 
+  // Paging through history and switching between machines walks the same few
+  // pages over and over, and each one otherwise re-reads the whole log. The key
+  // carries the generation, so a new ticket still shows up straight away.
+  var key = 'hist:' + wanted + ':' + offset + ':' + limit;
+  var cached = cacheGet_(key);
+  if (cached) return cached;
+
   var snapshot = logSnapshot_();
   var matching = snapshot.requests.filter(function (request) {
     return !wanted || wanted === 'All' || request.equipment === wanted;
   });
 
-  return {
+  var page = {
     requests: matching.slice(offset, offset + limit),
     total: matching.length,
     offset: offset,
     hasMore: offset + limit < matching.length,
     equipmentList: snapshot.equipmentList
   };
+  cachePut_(key, page, 300);
+  return page;
 }
 
 /**
@@ -1044,6 +1168,65 @@ function searchRequests(options) {
  * the whole log to a phone so it can count rows would undo the payload cap.
  */
 function getDashboard() {
+  var cached = cacheGet_('dashboard');
+  if (cached) return cached;
+  var built = buildDashboard_();
+  cachePut_('dashboard', built, 90);
+  return built;
+}
+
+/**
+ * A small cache in front of the expensive reads.
+ *
+ * Every write bumps a generation counter that is part of the key, so a new
+ * ticket or a status change invalidates instantly rather than leaving someone
+ * looking at numbers that disagree with the list they just changed.
+ */
+var GENERATION = null;
+var BUMPS = 0;
+
+function cacheGeneration_() {
+  // Read once per execution. Script properties are among the slowest calls
+  // available here, and this was being read twice for every cached lookup.
+  if (GENERATION !== null) return GENERATION;
+  try {
+    GENERATION = PropertiesService.getScriptProperties().getProperty('gen') || '0';
+  } catch (err) {
+    GENERATION = '0';
+  }
+  return GENERATION;
+}
+
+function bumpGeneration_() {
+  // A timestamp rather than a counter, so invalidating costs one write and no
+  // read: we never need to know what the old value was. The suffix matters —
+  // a create and a status change can land in the same millisecond, and two
+  // identical stamps would hand the second one the first one's cached numbers.
+  try {
+    var stamp = Date.now() + '.' + (++BUMPS);
+    PropertiesService.getScriptProperties().setProperty('gen', stamp);
+    GENERATION = stamp;
+  } catch (err) { /* cache just stays warm a little longer */ }
+}
+
+function cacheGet_(name) {
+  try {
+    var raw = CacheService.getScriptCache().get(name + ':' + cacheGeneration_());
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function cachePut_(name, value, seconds) {
+  try {
+    var json = JSON.stringify(value);
+    if (json.length > 90000) return;   // CacheService caps entries at 100KB
+    CacheService.getScriptCache().put(name + ':' + cacheGeneration_(), json, seconds);
+  } catch (err) { /* not worth failing a request over */ }
+}
+
+function buildDashboard_() {
   var snapshot = logSnapshot_();
   var now = Date.now();
   var windowDays = CONFIG.dashboardWindowDays;
@@ -1051,7 +1234,8 @@ function getDashboard() {
   var windowStart = now - windowDays * DAY_MS;
 
   var byStatus = {};
-  STATUS_OPTIONS.forEach(function (status) { byStatus[status] = 0; });
+  var openByStatus = {};
+  STATUS_OPTIONS.forEach(function (status) { byStatus[status] = 0; openByStatus[status] = 0; });
 
   var open = [];
   var perEquipment = {};
@@ -1070,6 +1254,8 @@ function getDashboard() {
     if (!request.closed) {
       stats.open++;
       open.push(request);
+      if (openByStatus[request.status] === undefined) openByStatus[request.status] = 0;
+      openByStatus[request.status]++;
     }
 
     // Downtime: how long a machine was unusable, counted only for the reports
@@ -1126,6 +1312,11 @@ function getDashboard() {
       byStatus: STATUS_OPTIONS.map(function (status) {
         return { status: status, count: byStatus[status] || 0 };
       }),
+      // Only the live states. A ring of every status ever is 90% "Done" and
+      // says nothing about whether the backlog is under control.
+      openByStatus: STATUS_OPTIONS
+        .filter(function (status) { return status !== 'Done' && status !== 'Not needed'; })
+        .map(function (status) { return { status: status, count: openByStatus[status] || 0 }; }),
       oldest: oldest ? {
         ticket: oldest.ticket,
         label: oldest.label,
@@ -1140,6 +1331,28 @@ function getDashboard() {
 }
 
 /**
+ * The signed-in viewer's work address, or '' if we cannot tell.
+ *
+ * Returns nothing rather than guessing: getEffectiveUser() would hand back the
+ * script owner, which would stamp every crew member's ticket with your name.
+ */
+function viewerEmail_() {
+  var email = '';
+  try {
+    email = String(Session.getActiveUser().getEmail() || '').trim();
+  } catch (err) {
+    return '';
+  }
+  if (!email) return '';
+
+  var domain = String(CONFIG.workEmailDomain || '').trim().toLowerCase();
+  if (domain && email.toLowerCase().slice(-(domain.length + 1)) !== '@' + domain) {
+    return '';   // signed in, but with a personal account
+  }
+  return email;
+}
+
+/**
  * What the app needs to build its Create Ticket form. Driven by CONFIG rather
  * than by what happens to be in the log already, so a machine that has never
  * broken still appears in the list.
@@ -1147,14 +1360,15 @@ function getDashboard() {
 function getFormOptions() {
   var leadership = Object.keys(CONFIG.leadership || {});
   return {
-    equipment: (CONFIG.equipment || []).slice(),
+    equipment: equipmentList_(),
     urgency: (CONFIG.urgencyOptions || []).slice(),
     leadership: leadership.concat(['Any / no preference']),
     generalEquipment: CONFIG.generalEquipment || '',
     urgentAnswers: (CONFIG.urgentAnswers || []).slice(),
     itemQuestion: titleList_(CONFIG.questions.item)[0],
     photosEnabled: true,
-    formUrl: CONFIG.formUrl || ''
+    formUrl: CONFIG.formUrl || '',
+    viewerEmail: viewerEmail_()
   };
 }
 
@@ -1177,9 +1391,15 @@ function createRequest(payload) {
   var leadership = String(payload.leadership || '').trim();
   var item = String(payload.item || '').trim();
 
+  var known = equipmentList_();
+  if (!known.length) {
+    throw new Error('No equipment is set up yet. Add machines to the "' +
+      EQUIPMENT_TAB + '" tab of the log, one per row.');
+  }
   if (!equipment) throw new Error('Choose which equipment this is about.');
-  if ((CONFIG.equipment || []).indexOf(equipment) === -1) {
-    throw new Error('Unknown equipment: ' + equipment);
+  if (known.indexOf(equipment) === -1) {
+    throw new Error('"' + equipment + '" is not on the ' + EQUIPMENT_TAB +
+      ' tab. Add it there, or pick one of: ' + known.join(', '));
   }
   if (!priority) throw new Error('Choose how urgent it is.');
   if ((CONFIG.urgencyOptions || []).indexOf(priority) === -1) {
@@ -1196,20 +1416,36 @@ function createRequest(payload) {
   if (!headers.length) throw new Error('The log has no header row. Run setUp first.');
 
   var q = CONFIG.questions;
+  var whoEmail = viewerEmail_();
   var values = {};
   values['Timestamp'] = new Date();
-  values[headerFor_(headers, q.equipment)] = equipment;
-  values[headerFor_(headers, q.item)] = item;
-  values[headerFor_(headers, q.priority)] = priority;
-  values[headerFor_(headers, q.problem)] = problem;
-  values[headerFor_(headers, q.reportedBy)] = reportedBy;
-  values[headerFor_(headers, q.leadership)] = leadership;
+  // Taken from the session, not from the payload: it is the one field nobody
+  // should be able to put someone else's name in.
+  if (whoEmail) values['Email Address'] = whoEmail;
 
-  var photoUrl = '';
-  if (payload.photo && payload.photo.data) {
-    photoUrl = savePhoto_(payload.photo, equipment);
-    values[PHOTO_COL] = photoUrl;
+  // headerFor_ falls back to the preferred wording when nothing in the sheet
+  // matches, and the positional append below drops any value whose header is
+  // not really there. Renaming a question on the form used to file a ticket
+  // with a blank machine on it and email everyone about nothing, so say which
+  // column is missing instead of writing an empty row.
+  var missing = [];
+  var put = function (question, value) {
+    var header = headerFor_(headers, question);
+    if (headers.indexOf(header) === -1) { missing.push('"' + header + '"'); return; }
+    values[header] = value;
+  };
+  put(q.equipment, equipment);
+  put(q.priority, priority);
+  put(q.problem, problem);
+  put(q.reportedBy, reportedBy);
+  if (missing.length) {
+    throw new Error('The log has no ' + missing.join(' or ') + ' column, so this request ' +
+      'cannot be filed. The log currently has: ' + headers.join(', ') + '. Rename the ' +
+      'column to match, or update CONFIG.questions in the script.');
   }
+  // Optional, so a sheet without them just carries less detail.
+  put(q.item, item);
+  put(q.leadership, leadership);
 
   // One append, built positionally from the header row.
   var rowValues = headers.map(function (header) {
@@ -1221,24 +1457,39 @@ function createRequest(payload) {
     return sheet.getLastRow();
   });
 
+  // Only once the request is safely on the sheet. Saving first left a photo
+  // orphaned in Drive whenever the append failed, and losing the photo is a
+  // far smaller problem than losing the request, so this never throws.
+  var photoUrl = '';
+  var photoError = '';
+  if (payload.photo && payload.photo.data) {
+    try {
+      photoUrl = savePhoto_(payload.photo, equipment);
+      if (headers.indexOf(PHOTO_COL) !== -1) writeCell_(sheet, row, PHOTO_COL, photoUrl);
+    } catch (err) {
+      photoError = 'The ticket was filed, but the photo did not upload.';
+    }
+  }
+
   var answers = readAnswers_(null, sheet, row);
+  // processNewRequest_ invalidates the cache; both routes go through it.
   var ticket = processNewRequest_(sheet, row, answers);
 
-  return { ok: true, ticket: ticket, row: row, photoUrl: photoUrl };
+  return { ok: true, ticket: ticket, row: row, photoUrl: photoUrl,
+           photoError: photoError, reportedByEmail: whoEmail };
 }
 
 /**
  * Put an attached photo in Drive and return a link to it.
  *
- * Files land in one folder, named after the ticket's machine and the date so
- * the folder stays browsable. Link sharing is on by default because the people
+ * Files are named after the ticket's machine and the date so the folder stays
+ * browsable. A folder pinned by ID in CONFIG is used as-is; otherwise one is
+ * found or created by name. Link sharing is on by default because the people
  * who get the email are not all in this Drive — turn it off in CONFIG if you
  * would rather share the folder by hand.
  */
 function savePhoto_(photo, equipment) {
-  var folderName = CONFIG.photoFolder || 'Equipment maintenance photos';
-  var folders = DriveApp.getFoldersByName(folderName);
-  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+  var folder = photoFolder_();
 
   var mime = String(photo.mimeType || 'image/jpeg');
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HHmm');
@@ -1256,6 +1507,28 @@ function savePhoto_(photo, equipment) {
     }
   }
   return file.getUrl();
+}
+
+/**
+ * The folder photos go into: a folder pinned by ID if CONFIG.photoFolderId is
+ * set, otherwise found-or-created by name.
+ *
+ * A bad or inaccessible ID throws from getFolderById, which would lose the
+ * photo silently on the by-name path; catch it and fall back so a mistyped ID
+ * is a folder-in-the-wrong-place problem, not a lost-photo one.
+ */
+function photoFolder_() {
+  var id = String(CONFIG.photoFolderId || '').trim();
+  if (id) {
+    try {
+      return DriveApp.getFolderById(id);
+    } catch (err) {
+      // Fall through to the named folder below rather than dropping the photo.
+    }
+  }
+  var folderName = CONFIG.photoFolder || 'Equipment maintenance photos';
+  var folders = DriveApp.getFoldersByName(folderName);
+  return folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
 }
 
 /**
@@ -1296,6 +1569,8 @@ function updateRequest(payload) {
       wasClosed: (previous === 'Done' || previous === 'Not needed')
     };
   });
+
+  bumpGeneration_();
 
   if (transition.closing && !transition.wasClosed) {
     notifyClosed_(sheet, row, status);
@@ -1342,18 +1617,21 @@ function healthCheck() {
   }
 
   // --- what the app offers ---
-  var equipment = CONFIG.equipment || [];
+  var equipment = equipmentList_();
   var urgency = CONFIG.urgencyOptions || [];
   if (!equipment.length) {
-    problems.push('equipment is empty — Create ticket in the app will have nothing to choose.');
+    problems.push('No equipment anywhere — add machines to the "' + EQUIPMENT_TAB +
+      '" tab, one per row. Create ticket has nothing to offer until you do.');
+  } else {
+    notes.push('Equipment (' + equipment.length + '): ' + equipment.join(', '));
   }
   if (!urgency.length) {
     problems.push('urgencyOptions is empty — Create ticket in the app will have nothing to choose.');
   }
   if (equipment.length && CONFIG.generalEquipment &&
       equipment.indexOf(CONFIG.generalEquipment) === -1) {
-    problems.push('generalEquipment ("' + CONFIG.generalEquipment + '") is not one of the ' +
-      'equipment options, so the "which item" question will never appear.');
+    problems.push('generalEquipment ("' + CONFIG.generalEquipment + '") is not on the ' +
+      EQUIPMENT_TAB + ' tab, so the "which item" question will never appear.');
   }
   (CONFIG.urgentAnswers || []).forEach(function (answer) {
     if (urgency.length && urgency.indexOf(answer) === -1) {
@@ -1392,6 +1670,19 @@ function healthCheck() {
     notes.push('Log: ' + sheet.getName() + ', ' + Math.max(sheet.getLastRow() - 1, 0) + ' requests.');
   }
 
+  // --- the photo folder, if one is pinned by ID ---
+  var folderId = String(CONFIG.photoFolderId || '').trim();
+  if (folderId) {
+    try {
+      var pinned = DriveApp.getFolderById(folderId);
+      notes.push('Photos go to the Drive folder "' + pinned.getName() + '".');
+    } catch (err) {
+      problems.push('photoFolderId "' + folderId + '" is not a folder this account can ' +
+        'open. Photos would go to a folder named "' + (CONFIG.photoFolder || '') +
+        '" instead. Check the ID, or that the folder is shared with whoever runs the app.');
+    }
+  }
+
   // --- triggers ---
   var installed = {};
   ScriptApp.getProjectTriggers().forEach(function (t) { installed[t.getHandlerFunction()] = true; });
@@ -1402,6 +1693,13 @@ function healthCheck() {
     ? 'Found ' + problems.length + ' thing(s) to fix:\n\n• ' + problems.join('\n• ')
     : 'All good. Nothing in CONFIG or the log looks wrong.';
   if (notes.length) report += '\n\n' + notes.join('\n');
+
+  // The trap this exists to stop people falling into twice.
+  report += '\n\nThis checks the code in the editor. The app serves the last ' +
+    'DEPLOYED version, so if you have edited CONFIG since deploying, the app is ' +
+    'still running the old settings until you do Deploy > Manage deployments > ' +
+    'edit > Version: New version. (The Equipment tab is the exception — that is ' +
+    'read live and needs no redeploy.)';
 
   Logger.log(report);
 
