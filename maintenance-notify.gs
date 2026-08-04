@@ -524,14 +524,16 @@ function processNewRequest_(sheet, row, answers) {
     return id;
   });
 
-  var recipients = recipientsFor_(answers.leadership);
   writeCell_(sheet, row, ASSIGNED_COL, CONFIG.facilitiesLead);
 
+  var recipients = recipientsFor_(answers.leadership);
   var urgent = isUrgent_(answers.priority);
   var subject = (urgent ? '[URGENT] ' : '') + ticket + ': ' +
     describe_(answers) + ' needs maintenance';
 
-  var link = rowUrl_(sheet, row);
+  // The sort below lifts this request to the top of the log (row 2); point the
+  // link there, so it lands on the request the email is about.
+  var link = rowUrl_(sheet, 2);
   MailApp.sendEmail({
     to: recipients.join(','),
     replyTo: answers.email || undefined,
@@ -540,6 +542,12 @@ function processNewRequest_(sheet, row, answers) {
     htmlBody: htmlBody_(ticket, answers, link, urgent),
     name: 'Equipment Maintenance Log'
   });
+
+  // Last of all: keep the newest request at the top so nobody scrolls years of
+  // history to find today's. After the email — so a retry from a failed send
+  // re-runs against a row that has not moved — and a sort failure never blocks
+  // the notification, only the ordering.
+  try { sortNewestFirst_(sheet); } catch (err) { /* the request is still filed */ }
 
   return ticket;
 }
@@ -758,12 +766,17 @@ function recipientsFor_(leadershipAnswer) {
 
 /** Sequential ticket ID based on the row number, e.g. MNT-0007. */
 /**
- * One past the highest ticket number already in the log.
+ * One past the highest number ever issued.
  *
- * Deliberately not derived from the row number. Deleting a row shifts every
- * row below it up, so a row-based ID would hand the next request an ID that
- * an older request is already using — and duplicate tickets quietly break the
- * web app's check that it is updating the row it thinks it is.
+ * Deliberately not derived from the row number. Deleting a row shifts every row
+ * below it up, so a row-based ID would hand the next request an ID an older
+ * request already holds.
+ *
+ * The highest number still in the sheet is not enough on its own either:
+ * deleting the newest request would drop the ceiling and the next request would
+ * reuse its number. A stored high-water mark remembers the ceiling across
+ * deletions, so a ticket number is never handed out twice — which matters
+ * because the app finds the row to update by ticket.
  */
 function nextTicketId_(sheet) {
   var headers = headerRow_(sheet);
@@ -779,9 +792,19 @@ function nextTicketId_(sheet) {
     }
   }
 
+  var stored = 0;
+  try {
+    stored = parseInt(PropertiesService.getScriptProperties().getProperty('lastTicket'), 10) || 0;
+  } catch (err) { /* fall back to the sheet's ceiling */ }
+
+  var next = Math.max(highest, stored) + 1;
+  try {
+    PropertiesService.getScriptProperties().setProperty('lastTicket', String(next));
+  } catch (err) { /* the sheet's ceiling still moves us forward next time */ }
+
   // Pad to four digits without truncating: slicing the last four characters
   // would turn ticket 10000 into "0000" and collide forever after.
-  var digits = String(highest + 1);
+  var digits = String(next);
   while (digits.length < 4) digits = '0' + digits;
 
   return CONFIG.ticketPrefix + '-' + digits;
@@ -834,6 +857,26 @@ function readCell_(sheet, row, headerName) {
 function rowUrl_(sheet, row) {
   return SpreadsheetApp.getActive().getUrl() + '#gid=' + sheet.getSheetId() +
     '&range=A' + row;
+}
+
+/**
+ * Order the log newest first, by the Timestamp column, keeping the header row
+ * in place. Whole rows move together, so every tracking column travels with its
+ * request.
+ *
+ * Because rows move, nothing may treat a row number as a permanent handle for a
+ * request — updateRequest looks a request up by its ticket for exactly this
+ * reason.
+ */
+function sortNewestFirst_(sheet) {
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 3 || lastCol < 1) return;   // 0 or 1 data rows: already in order
+
+  var headers = headerRow_(sheet);
+  var tsCol = headers.indexOf('Timestamp') + 1;
+  if (tsCol < 1) tsCol = 1;                  // Timestamp is column A on a Forms sheet
+  sheet.getRange(2, 1, lastRow - 1, lastCol).sort({ column: tsCol, ascending: false });
 }
 
 function isUrgent_(priority) {
@@ -1532,25 +1575,44 @@ function photoFolder_() {
 }
 
 /**
+ * The row a ticket is on right now.
+ *
+ * Rows move — the log re-sorts newest-first on every submission, and deleting a
+ * row shifts everything below it up — so the row number a phone loaded with is
+ * only a hint. The ticket is the stable handle: trust the hint when it still
+ * holds that ticket, otherwise find it. Returns 0 if the ticket is gone.
+ *
+ * With no ticket to go on, the hint is all there is, so it is trusted as-is.
+ */
+function resolveRow_(sheet, ticket, hintRow) {
+  var last = sheet.getLastRow();
+  var hintOk = hintRow >= 2 && hintRow <= last;
+  if (!ticket) return hintOk ? hintRow : 0;
+  if (hintOk && readCell_(sheet, hintRow, TICKET_COL) === ticket) return hintRow;
+
+  var col = headerRow_(sheet).indexOf(TICKET_COL) + 1;
+  if (col < 1 || last < 2) return 0;
+  var values = sheet.getRange(2, col, last - 1, 1).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === ticket) return i + 2;
+  }
+  return 0;
+}
+
+/**
  * Update one request from the web app.
  *
- * The ticket is passed back and re-checked against the row before writing:
- * someone deleting a row while a phone has the list open would otherwise
- * shift every row number and write the update onto the wrong request.
+ * The request is found by its ticket, not by the row number the phone happened
+ * to load it at: the log re-sorts on every submission and rows can be deleted,
+ * so the row is only a hint. If the ticket is gone, the update is refused rather
+ * than written onto whatever request now sits at that row.
  */
 function updateRequest(payload) {
   var sheet = responseSheet_();
-  var row = Number(payload && payload.row);
-  if (!row || row < 2 || row > sheet.getLastRow()) {
-    throw new Error('That request no longer exists. Pull down to refresh.');
-  }
+  var ticket = String(payload && payload.ticket !== undefined ? payload.ticket : '').trim();
 
-  // Compare what the phone believed was on this row against what is there now.
-  // Checking only when both sides are non-empty would skip the check exactly
-  // when it matters most: a row whose ticket cell is blank.
-  var onSheet = readCell_(sheet, row, TICKET_COL);
-  if (payload.ticket !== undefined && String(payload.ticket).trim() !== onSheet) {
-    throw new Error('The log changed since this list was loaded. Refresh and try again.');
+  if (!resolveRow_(sheet, ticket, Number(payload && payload.row))) {
+    throw new Error('That request no longer exists. Pull down to refresh.');
   }
 
   var status = String(payload.status || '').trim();
@@ -1558,13 +1620,17 @@ function updateRequest(payload) {
     throw new Error('Unknown status: ' + status);
   }
 
-  // Read-then-write again: two phones saving the same request at the same
-  // moment could otherwise both see it as open and both send a closing email.
+  // Resolve again inside the lock and write there: a submission arriving at the
+  // same moment may have just re-sorted the sheet and moved this ticket. The
+  // lock also stops two phones both seeing it open and both emailing a close.
   var transition = withLock_(function () {
+    var row = resolveRow_(sheet, ticket, Number(payload && payload.row));
+    if (!row) throw new Error('That request no longer exists. Pull down to refresh.');
     var previous = readCell_(sheet, row, STATUS_COL);
     if (payload.notes !== undefined) writeCell_(sheet, row, NOTES_COL, String(payload.notes));
     writeCell_(sheet, row, STATUS_COL, status);
     return {
+      row: row,
       closing: (status === 'Done' || status === 'Not needed'),
       wasClosed: (previous === 'Done' || previous === 'Not needed')
     };
@@ -1573,9 +1639,9 @@ function updateRequest(payload) {
   bumpGeneration_();
 
   if (transition.closing && !transition.wasClosed) {
-    notifyClosed_(sheet, row, status);
+    notifyClosed_(sheet, transition.row, status);
   } else if (!transition.closing) {
-    writeCell_(sheet, row, CLOSED_COL, '');
+    writeCell_(sheet, transition.row, CLOSED_COL, '');
   }
 
   return { ok: true, status: status };
