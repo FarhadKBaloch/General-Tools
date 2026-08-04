@@ -86,6 +86,20 @@
   #refresh.busy { color: var(--accent); animation: spin .9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { #refresh.busy { animation: none; opacity: .5; } }
+
+  /* Motion. Everything here animates only opacity and transform, which the
+     phone composites on the GPU off the main thread — so it never blocks a tap
+     or a load, and never reflows the page. Gated behind the OS "reduce motion"
+     setting, and short by design. */
+  @media (prefers-reduced-motion: no-preference) {
+    #view.enter        { animation: viewEnter .18s ease-out both; }
+    .formcard.sheet-in { animation: sheetIn .22s cubic-bezier(.2,.75,.35,1) both; }
+    .formcard.sheet-out { animation: sheetOut .16s ease-in both; }
+  }
+  @keyframes viewEnter { from { opacity: 0; transform: translateY(6px);  } to { opacity: 1; transform: none; } }
+  @keyframes sheetIn   { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+  @keyframes sheetOut  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(12px); } }
+
   #subbar:empty { display: none; }
 
   .filters {
@@ -486,7 +500,7 @@
     },
     dashboard: { data: null, loaded: false, error: '' },
     prefetched: false,
-    create: { open: false, submitting: false, error: '', done: null, photo: null, draft: null }
+    create: { open: false, submitting: false, error: '', done: null, photo: null, draft: null, entering: false }
   };
 
   var tokens = { history: 0 };
@@ -667,13 +681,25 @@
     state.create.done = null;
     state.create.photo = null;
     state.create.draft = null;      // a new ticket starts blank
+    state.create.entering = true;   // slide the sheet up on this first render only
     render();
   }
 
   function closeCreate() {
-    state.create.open = false;
-    state.create.photo = null;
-    render();
+    // Let the sheet settle back down before Home replaces it. If the form is not
+    // on screen (the confirmation panel, or reduced motion), close at once.
+    var card = viewEl.querySelector('.formcard');
+    if (card && motionOK()) {
+      card.classList.add('sheet-out');
+      setTimeout(finishClose, 150);
+    } else {
+      finishClose();
+    }
+    function finishClose() {
+      state.create.open = false;
+      state.create.photo = null;
+      render();
+    }
   }
 
   function renderCreate() {
@@ -732,7 +758,7 @@
     }
 
     viewEl.innerHTML =
-      '<div class="formcard">' +
+      '<div class="formcard' + (state.create.entering ? ' sheet-in' : '') + '">' +
         (state.create.error ? '<div class="formerr">' + esc(state.create.error) + '</div>' : '') +
 
         '<label class="field first" for="fEquip">Equipment <span class="req">*</span></label>' +
@@ -794,6 +820,10 @@
     if (state.create.photo) showPhotoPreview();
     document.getElementById('cancelBtn').addEventListener('click', closeCreate);
     document.getElementById('submitBtn').addEventListener('click', submitCreate);
+
+    // The slide-up plays once, on the first render after opening — not when the
+    // form re-renders to show a validation message or a server error.
+    state.create.entering = false;
   }
 
   /**
@@ -1480,6 +1510,22 @@
   // Shell
   // ======================================================================
 
+  // True unless the phone has asked for reduced motion. Read live, so toggling
+  // the OS setting takes effect without reloading.
+  function motionOK() {
+    return !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  // Replay the view-enter animation. Removing the class and forcing a reflow
+  // before re-adding it is what makes it fire again on every tab switch rather
+  // than only the first.
+  function playViewEnter() {
+    if (!motionOK()) return;
+    viewEl.classList.remove('enter');
+    void viewEl.offsetWidth;
+    viewEl.classList.add('enter');
+  }
+
   function render() {
     if (state.create.open) {
       // Capture before the markup is replaced, so every path that re-renders
@@ -1511,11 +1557,13 @@
       // A pending search for a tab nobody is looking at is a wasted round trip.
       clearTimeout(searchTimer);
     }
+    var changed = state.tab !== tab;
     state.tab = tab;
     document.querySelectorAll('.tabbar button').forEach(function (btn) {
       btn.setAttribute('aria-selected', String(btn.dataset.tab === tab));
     });
     window.scrollTo(0, 0);
+    if (changed) playViewEnter();   // fade the new tab's screen in
 
     // A tab that failed to load counts as not loaded, so coming back to it
     // retries instead of showing the same stale error until someone finds the
