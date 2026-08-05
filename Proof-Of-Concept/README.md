@@ -70,6 +70,23 @@ afterward. Seven concrete properties:
 other spreadsheets, call outside services, or store any secret. Each of those is
 a door that is simply not built.
 
+### The exact permissions it asks for
+
+These are declared in `appsscript.json`, so the consent screen shows precisely
+this and nothing more. Each is the narrowest scope that still works:
+
+| Scope | What it grants | What it cannot do |
+| --- | --- | --- |
+| `gmail.readonly` | Read messages | Send, reply, delete, or edit any mail |
+| `spreadsheets.currentonly` | Write to the one bound sheet | Open or touch any other Drive file |
+| `script.scriptapp` | Create the 15-minute trigger | — |
+| `userinfo.email` | See the signed-in address (for the domain lock) | Read any other profile data |
+
+> The read-only Gmail scope is only possible because the code uses the Gmail
+> *advanced service* (enabled in the manifest). The convenient `GmailApp` class
+> would force the far broader `https://mail.google.com/` scope — full send and
+> delete — which is exactly what we avoid.
+
 ---
 
 ## Setup (about ten minutes)
