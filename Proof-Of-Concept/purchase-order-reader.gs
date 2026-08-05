@@ -111,6 +111,7 @@ var COLUMNS = [
   { header: 'Line Total',       key: 'totalCost'   },
   { header: 'Supplier',         key: 'supplier'    },
   { header: 'Order Date',       key: 'orderDate'   },
+  { header: 'Source',           key: '_source'     },
   { header: 'From',             key: '_from'       },
   { header: 'Email Subject',    key: '_subject'    },
   { header: 'Gmail Link',       key: '_gmailLink'  }
@@ -185,11 +186,11 @@ function runDiagnostics() {
     var refs = (list && list.messages) || [];
     out.push('4. Gmail service: OK. Your search matched ' + refs.length + ' recent message(s):');
     refs.forEach(function (ref) {
-      var full = Gmail.Users.Messages.get('me', ref.id,
-        { format: 'metadata', metadataHeaders: ['From', 'Subject'] });
+      var full = Gmail.Users.Messages.get('me', ref.id, { format: 'full' });
       var from = headerValue_(full, 'From');
+      var pdfs = extractPdfAttachments_(full.payload).length;
       out.push('     - ' + from + '  |  ' + headerValue_(full, 'Subject') +
-        '  |  allowed=' + senderAllowed_(from, senders));
+        '  |  allowed=' + senderAllowed_(from, senders) + '  |  pdfs=' + pdfs);
     });
     if (!refs.length) out.push('     (No matches. Widen CONFIG.searchQuery or check the subject words.)');
   } catch (e) {
@@ -207,6 +208,56 @@ function runDiagnostics() {
   var report = out.join('\n');
   Logger.log(report);
   return report;
+}
+
+/**
+ * Reprocess mail from the last N days (default 7), once, by hand.
+ *
+ * The scheduled reader only looks at mail newer than the watermark, so orders
+ * that arrived before setUp() are skipped. Run this to pull them in — it moves
+ * the watermark back, runs once, and then normal scheduling resumes from the
+ * newest message. Already-logged order numbers are still de-duplicated.
+ */
+function backfillDays(days) {
+  days = Number(days) || 7;
+  var since = Date.now() - days * 24 * 60 * 60 * 1000;
+  PropertiesService.getScriptProperties().setProperty(PROP_KEY_WATERMARK, String(since));
+  processPurchaseOrders();
+  var msg = 'Looked back ' + days + ' day(s) and ran once. Check the "' +
+    CONFIG.sheetName + '" tab; run runDiagnostics() if nothing appeared.';
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * Print the text extracted from the newest allowed PDF, without writing a row.
+ *
+ * Use this to see exactly how a supplier's PDF flattens to text, so the parser
+ * can be tuned to it (the same way SAMPLE_PO was tuned for the email body).
+ * Run it, then read View -> Logs.
+ */
+function dumpLatestPdfText() {
+  var senders = normaliseSenders_(CONFIG.poSenders);
+  var messages = findCandidateMessages_(CONFIG.searchQuery, CONFIG.maxThreadsPerRun);
+
+  for (var i = 0; i < messages.length; i++) {
+    var msg = messages[i];
+    if (!senderAllowed_(msg.from, senders)) continue;
+    var atts = msg.attachments || [];
+    if (!atts.length) continue;
+
+    var text = safeAttachmentText_(msg.id, atts[0]);
+    Logger.log('From:    %s\nSubject: %s\nPDF:     %s\n' +
+      '----- extracted text (first 4000 chars) -----\n%s',
+      msg.from, msg.subject, atts[0].filename, String(text).slice(0, 4000));
+
+    var parsed = parsePurchaseOrder_(text, msg.subject);
+    Logger.log('----- what the parser found -----\norder=%s  supplier=%s  items=%s',
+      parsed.orderNumber, parsed.supplier, parsed.items.length);
+    return text;
+  }
+  Logger.log('No allowed message with a PDF attachment found in the search window.');
+  return '';
 }
 
 /** Create (or update the header of) the destination tab. */
@@ -268,18 +319,30 @@ function processPurchaseOrders() {
 
       if (!senderAllowed_(msg.from, senders)) return;     // untrusted sender: ignore
 
-      var parsed = parsePurchaseOrder_(msg.body, msg.subject) || {};
-      var order = String(parsed.orderNumber || '').trim();
-      if (!order) return;                                 // couldn't identify the PO
-      if (seenOrders[order.toLowerCase()]) return;        // already logged this PO
-      seenOrders[order.toLowerCase()] = true;
+      // Each message yields several things to try: the email body, plus the text
+      // of every PDF attachment (most real POs ride in as a PDF). Each source is
+      // parsed independently, so one email can carry more than one order.
+      var sources = [{ label: 'email body', text: msg.body }];
+      (msg.attachments || []).forEach(function (att) {
+        var text = safeAttachmentText_(msg.id, att);
+        if (text) sources.push({ label: att.filename, text: text });
+      });
 
-      var items = Array.isArray(parsed.items) && parsed.items.length
-        ? parsed.items
-        : [parsed];                                       // single-item fallback
+      sources.forEach(function (src) {
+        var parsed = parsePurchaseOrder_(src.text, msg.subject) || {};
+        var order = String(parsed.orderNumber || '').trim();
+        if (!order) return;                               // couldn't identify a PO here
+        if (seenOrders[order.toLowerCase()]) return;      // already logged this PO
+        seenOrders[order.toLowerCase()] = true;
+        parsed._source = src.label;
 
-      items.forEach(function (item) {
-        rowsToAppend.push(buildRow_(item, parsed, msg));
+        var items = Array.isArray(parsed.items) && parsed.items.length
+          ? parsed.items
+          : [parsed];                                     // single-item fallback
+
+        items.forEach(function (item) {
+          rowsToAppend.push(buildRow_(item, parsed, msg));
+        });
       });
     });
 
@@ -325,6 +388,7 @@ function findCandidateMessages_(query, maxThreads) {
       from: headerValue_(full, 'From'),
       subject: headerValue_(full, 'Subject'),
       body: extractPlainText_(full.payload),
+      attachments: extractPdfAttachments_(full.payload),
       gmailLink: 'https://mail.google.com/mail/u/0/#all/' + (full.threadId || ref.id)
     });
   });
@@ -390,6 +454,83 @@ function decodeBase64Url_(data) {
     return Utilities.newBlob(bytes).getDataAsString('UTF-8');
   } catch (err) {
     return '';
+  }
+}
+
+// ===========================================================================
+// PDF ATTACHMENTS — read the order out of the attached PDF.
+// ===========================================================================
+//
+// Most suppliers send the purchase order as a PDF, not as body text. We read it
+// with Google's OWN converter: the attachment is turned into a temporary Google
+// Doc (which OCRs a scanned page and lifts the text out of a digital one), we
+// read that text, then delete the temporary Doc immediately. The PDF never
+// leaves the Workspace and never touches a third party. The only added
+// permission is drive.file — create and manage files THIS app makes — so the
+// script can make and delete its own scratch Doc and nothing else in Drive.
+
+/** List the PDF parts of a message payload as {filename, attachmentId, mimeType}. */
+function extractPdfAttachments_(payload) {
+  var out = [];
+  (function walk(part) {
+    if (!part) return;
+    var filename = part.filename || '';
+    var mime = part.mimeType || '';
+    var attId = part.body && part.body.attachmentId;
+    if (attId && (mime === 'application/pdf' || /\.pdf$/i.test(filename))) {
+      out.push({ filename: filename || 'attachment.pdf', attachmentId: attId, mimeType: mime });
+    }
+    (part.parts || []).forEach(walk);
+  })(payload);
+  return out;
+}
+
+/** Read an attachment's text, never throwing — a bad PDF must not stop the run. */
+function safeAttachmentText_(messageId, att) {
+  try {
+    return attachmentText_(messageId, att);
+  } catch (e) {
+    Logger.log('PDF read failed for "%s": %s', att.filename, (e && e.message) || e);
+    return '';
+  }
+}
+
+/** Fetch a PDF attachment (read-only Gmail) and return its extracted text. */
+function attachmentText_(messageId, att) {
+  var res = Gmail.Users.Messages.Attachments.get('me', messageId, att.attachmentId);
+  if (!res || !res.data) return '';
+  var bytes = Utilities.base64DecodeWebSafe(res.data);
+  var blob = Utilities.newBlob(bytes, att.mimeType || 'application/pdf', att.filename || 'po.pdf');
+  // Tabs become spaces so the whitespace-table branch of the parser can see the
+  // columns a converted PDF table flattens into.
+  return String(pdfBlobToText_(blob) || '').replace(/\t/g, '   ');
+}
+
+/**
+ * Convert a PDF blob to text via a throwaway Google Doc, then delete the Doc.
+ *
+ * Setting the target type to a Google Doc makes Drive convert (and OCR) the
+ * PDF; exporting that Doc as text/plain gives us the words. Everything here is
+ * an app-created file, so drive.file is all it needs.
+ */
+function pdfBlobToText_(pdfBlob) {
+  var meta = {
+    name: 'po-reader-temp-' + Date.now(),
+    mimeType: 'application/vnd.google-apps.document'
+  };
+  var created = Drive.Files.create(meta, pdfBlob, { ocrLanguage: 'en', fields: 'id' });
+  var id = created && created.id;
+  if (!id) return '';
+
+  try {
+    var exported = Drive.Files.export(id, 'text/plain');
+    if (typeof exported === 'string') return exported;
+    if (exported && typeof exported.getDataAsString === 'function') {
+      return exported.getDataAsString('UTF-8');
+    }
+    return '';
+  } finally {
+    try { Drive.Files.remove(id); } catch (e) { /* best-effort cleanup of the scratch Doc */ }
   }
 }
 
@@ -692,6 +833,7 @@ function buildRow_(item, order, msg) {
     totalCost: numberOrText_(item.totalCost),
     supplier: order.supplier || extractAddress_(msg.from) || '',
     orderDate: order.orderDate || '',
+    _source: order._source || 'email body',
     _from: msg.from || '',
     _subject: msg.subject || '',
     _gmailLink: msg.gmailLink || ''
