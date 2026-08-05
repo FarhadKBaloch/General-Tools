@@ -777,7 +777,7 @@ function getDashboardData() {
 
   var width = COLUMNS.length;
   var take = Math.min(50, lastRow - 1);
-  var values = sheet.getRange(lastRow - take + 1, 1, take, width).getValues();
+  var values = toPlainRows_(sheet.getRange(lastRow - take + 1, 1, take, width).getValues());
   values.reverse();   // newest first
 
   var idx = keyIndex_();
@@ -791,17 +791,50 @@ function getDashboardData() {
     headers: COLUMNS.map(function (c) { return c.header; }),
     rows: values,
     totalRows: lastRow - 1,
-    totalUnits: totalUnits,
-    totalSpend: round2_(totalSpend),
+    totalUnits: totalUnits || 0,
+    totalSpend: round2_(totalSpend) || 0,
     lastRun: lastRunLabel_()
   };
 }
 
-/** Let the dashboard "Check now" button trigger a run on demand. */
+/**
+ * Convert a getValues() grid into a JSON-safe grid for the web app.
+ *
+ * google.script.run can hand a Date back to the browser as null — and a single
+ * illegal value can blank the WHOLE response, which is why the dashboard once
+ * received null and could not render. Dates become formatted text and empty
+ * cells become ''; strings, numbers and booleans pass straight through.
+ */
+function toPlainRows_(grid) {
+  var tz = Session.getScriptTimeZone();
+  return grid.map(function (row) {
+    return row.map(function (cell) {
+      if (cell instanceof Date) return Utilities.formatDate(cell, tz, 'yyyy-MM-dd HH:mm');
+      return (cell === null || cell === undefined) ? '' : cell;
+    });
+  });
+}
+
+/**
+ * Let the dashboard "Check now" button trigger a run on demand.
+ *
+ * A failure inside the run (e.g. the Gmail service not being enabled) is caught
+ * and returned as `runError` rather than thrown, so the button always gets back
+ * a well-formed payload and can show what happened instead of failing blankly.
+ */
 function checkNow() {
   if (!viewerEmail_()) throw new Error('Not authorised.');
-  processPurchaseOrders();
-  return getDashboardData();
+
+  var runError = '';
+  try {
+    processPurchaseOrders();
+  } catch (e) {
+    runError = String((e && e.message) || e);
+  }
+
+  var data = getDashboardData();
+  data.runError = runError;
+  return data;
 }
 
 /** Map each COLUMNS key to its zero-based position. */

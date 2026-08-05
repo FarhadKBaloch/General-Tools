@@ -132,6 +132,11 @@
   }
 
   function render(data) {
+    if (!data) {
+      showBody('The server returned no data. Run runDiagnostics() in the Apps ' +
+        'Script editor (then View → Logs) to see why.');
+      return;
+    }
     document.getElementById('s-rows').textContent = Number(data.totalRows).toLocaleString();
     document.getElementById('s-units').textContent = Number(data.totalUnits).toLocaleString();
     document.getElementById('s-spend').textContent = money(data.totalSpend);
@@ -223,6 +228,9 @@
       .withSuccessHandler(function (data) {
         btn.disabled = false; btn.textContent = 'Check for new orders now';
         safeRender(data);
+        if (data && data.runError) {
+          alert('Checked, but the run reported a problem:\n\n' + data.runError);
+        }
       })
       .withFailureHandler(function (err) {
         btn.disabled = false; btn.textContent = 'Check for new orders now';
