@@ -477,6 +477,22 @@ against. Print a new sticker for the new name.)
 Blank rows and duplicates are ignored, and names are trimmed. If the tab is
 deleted the script falls back to `CONFIG.equipment`, so nothing breaks.
 
+**Grouping a big fleet — the Category column.** Once you have more than a
+dozen machines, the equipment filter at the top of the Open and History tabs
+becomes a long left-right scroll. Add a **`Category`** column to the Equipment
+tab (a header cell reading `Category`, in any column) and give each machine a
+group — `Tractors`, `Golf Carts`, `Gators`, and so on. The filter then shows a
+short row of **category** chips instead of every machine; tap a category and a
+second row appears with just that category's machines. You never scroll more
+than one group at a time.
+
+It's entirely optional and read live like the rest of the tab — leave it blank
+and the app lists every machine as before; fill it in and the grouping turns on
+at the next load, no redeploy. A machine left without a category shows under
+`Other` (rename that heading with `CONFIG.uncategorisedLabel`). Categories can
+be anything you like and machines of different brands can share one, so all your
+tractors group together even though they're Deere, Ford and New Holland.
+
 The rest of the Create ticket form still comes from `CONFIG`:
 
 ```js

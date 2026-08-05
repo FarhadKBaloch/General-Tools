@@ -87,6 +87,10 @@ var CONFIG = {
   // Must match the form's answer option exactly.
   generalEquipment: 'General equipment',
 
+  // The Open and History filters group machines by the "Category" column on the
+  // Equipment tab. Anything left without a category falls under this heading.
+  uncategorisedLabel: 'Other',
+
   // Priority answers that should mark the email as high importance and put a
   // flag in the subject line. Match your form's wording.
   urgentAnswers: ['Safety issue - do not operate', 'Down - cannot be used'],
@@ -182,6 +186,80 @@ function equipmentList_() {
 
 var EQUIPMENT_CACHE = null;
 
+/**
+ * Which category each machine belongs to, read from a "Category" column on the
+ * Equipment tab (any position — found by header). Lets the Open and History
+ * filters group 30+ machines into a handful of chips instead of one long
+ * left-right scroll.
+ *
+ * Returns { map: {name: category}, order: [categories, first seen first] }.
+ * No "Category" column, or every cell blank, means an empty order — and the app
+ * falls back to the flat list, so nothing breaks on a log that never set them.
+ */
+function equipmentCategoryMap_() {
+  if (CATEGORY_CACHE) return CATEGORY_CACHE;
+
+  var map = {};
+  var order = [];
+  var tab = SpreadsheetApp.getActive().getSheetByName(EQUIPMENT_TAB);
+  var lastRow = tab ? tab.getLastRow() : 0;
+  var lastCol = tab ? tab.getLastColumn() : 0;
+
+  if (lastRow > 1 && lastCol >= 1) {
+    var headers = tab.getRange(1, 1, 1, lastCol).getValues()[0]
+      .map(function (h) { return String(h).trim().toLowerCase(); });
+    var nameCol = headers.indexOf('equipment');
+    if (nameCol === -1) nameCol = 0;              // the list has always been column A
+    var catCol = headers.indexOf('category');
+    if (catCol !== -1) {
+      tab.getRange(2, 1, lastRow - 1, lastCol).getValues().forEach(function (row) {
+        var name = String(row[nameCol] == null ? '' : row[nameCol]).trim();
+        var cat = String(row[catCol] == null ? '' : row[catCol]).trim();
+        if (name && cat) {
+          map[name] = cat;
+          if (order.indexOf(cat) === -1) order.push(cat);
+        }
+      });
+    }
+  }
+
+  CATEGORY_CACHE = { map: map, order: order };
+  return CATEGORY_CACHE;
+}
+
+var CATEGORY_CACHE = null;
+
+/**
+ * Group a list of machine names into ordered categories for the filter chips.
+ * Machines with no category fall into a trailing "Other" bucket. Returns [] when
+ * no categories are set at all, which the app reads as "show the flat list".
+ */
+function groupEquipment_(names) {
+  var info = equipmentCategoryMap_();
+  if (!info.order.length) return [];
+
+  var other = CONFIG.uncategorisedLabel || 'Other';
+  var order = info.order.slice();
+  var buckets = {};
+  names.forEach(function (name) {
+    var cat = info.map[name] || other;
+    if (!buckets[cat]) {
+      buckets[cat] = [];
+      if (order.indexOf(cat) === -1) order.push(cat);   // the Other bucket, appended last
+    }
+    buckets[cat].push(name);
+  });
+
+  return order
+    .filter(function (cat) { return buckets[cat] && buckets[cat].length; })
+    .map(function (cat) { return { name: cat, items: buckets[cat] }; });
+}
+
+/** Which category a machine sits in, for filtering the whole log server-side. */
+function categoryOf_(name) {
+  return equipmentCategoryMap_().map[name] || (CONFIG.uncategorisedLabel || 'Other');
+}
+
 /** Create the Equipment tab on first run, seeded from CONFIG. Never overwrites. */
 function buildEquipmentTab_() {
   var ss = SpreadsheetApp.getActive();
@@ -189,16 +267,25 @@ function buildEquipmentTab_() {
   if (tab) return;   // already yours to edit — leave it alone
 
   tab = ss.insertSheet(EQUIPMENT_TAB);
-  tab.getRange('A1').setValue('Equipment').setFontWeight('bold').setBackground('#e8efe9');
-  tab.getRange('B1').setValue(
+  tab.getRange('A1:B1').setFontWeight('bold').setBackground('#e8efe9');
+  tab.getRange('A1').setValue('Equipment').setNote(
     'One machine per row. The app reads this list every time it loads, so ' +
     'adding or renaming here needs no redeploy. Names must match the form\'s ' +
     'answer options and the printed QR labels.'
-  ).setFontColor('#6b7472').setFontSize(9);
+  );
+  // Optional. Fill this in to group the Open and History filters — e.g. give
+  // every tractor "Tractors" — so a long fleet is a few chips, not one long
+  // scroll. Leave it blank and the app just lists every machine.
+  tab.getRange('B1').setValue('Category').setNote(
+    'Optional. A word that groups machines in the app\'s Open and History ' +
+    'filters, e.g. "Tractors", "Golf Carts". Machines left blank appear under ' +
+    '"' + (CONFIG.uncategorisedLabel || 'Other') + '".'
+  );
 
   var seed = (CONFIG.equipment || []).map(function (name) { return [name]; });
   if (seed.length) tab.getRange(2, 1, seed.length, 1).setValues(seed);
   tab.setColumnWidth(1, 220);
+  tab.setColumnWidth(2, 150);
   tab.setFrozenRows(1);
 }
 
@@ -1141,6 +1228,7 @@ function buildOpenList_() {
   return {
     requests: out,
     equipmentList: snapshot.equipmentList,
+    categories: groupEquipment_(snapshot.equipmentList),
     statuses: STATUS_OPTIONS,
     formUrl: CONFIG.formUrl || '',
     closedHidden: closedHidden
@@ -1154,19 +1242,23 @@ function buildOpenList_() {
 function getHistory(options) {
   options = options || {};
   var wanted = String(options.equipment || '').trim();
+  var wantedCat = String(options.category || '').trim();
   var offset = Math.max(0, Number(options.offset) || 0);
   var limit = Math.min(Math.max(Number(options.limit) || 25, 1), 100);
 
   // Paging through history and switching between machines walks the same few
   // pages over and over, and each one otherwise re-reads the whole log. The key
   // carries the generation, so a new ticket still shows up straight away.
-  var key = 'hist:' + wanted + ':' + offset + ':' + limit;
+  var key = 'hist:' + wanted + '|' + wantedCat + ':' + offset + ':' + limit;
   var cached = cacheGet_(key);
   if (cached) return cached;
 
+  var byCategory = wantedCat && wantedCat !== 'All' && (!wanted || wanted === 'All');
   var snapshot = logSnapshot_();
   var matching = snapshot.requests.filter(function (request) {
-    return !wanted || wanted === 'All' || request.equipment === wanted;
+    if (wanted && wanted !== 'All') return request.equipment === wanted;   // one machine
+    if (byCategory) return categoryOf_(request.equipment) === wantedCat;    // a whole category
+    return true;
   });
 
   var page = {
@@ -1174,7 +1266,8 @@ function getHistory(options) {
     total: matching.length,
     offset: offset,
     hasMore: offset + limit < matching.length,
-    equipmentList: snapshot.equipmentList
+    equipmentList: snapshot.equipmentList,
+    categories: groupEquipment_(snapshot.equipmentList)
   };
   cachePut_(key, page, 300);
   return page;

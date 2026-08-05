@@ -133,6 +133,11 @@
   .chip[aria-pressed="true"] {
     background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
   }
+  /* The drill-down row: one category's machines. Lighter and a touch smaller so
+     it reads as a second level under the category chips above it. */
+  .filters.subfilters { padding-top: 0; }
+  .subfilters .chip { min-height: 38px; font-size: 13px; background: var(--bg); }
+  .subfilters .chip[aria-pressed="true"] { background: var(--accent); }
 
   .searchrow { padding: 10px 0 12px; position: relative; }
   #search {
@@ -501,10 +506,10 @@
     tab: 'home',
     scanned: SCANNED,
     options: null,
-    open: { data: null, equipment: 'All', onlyOpen: true, error: '' },
+    open: { data: null, category: 'All', equipment: 'All', onlyOpen: true, error: '' },
     history: {
-      query: '', equipment: 'All', requests: [], total: 0, hasMore: false,
-      equipmentList: [], loaded: false, loading: false, error: ''
+      query: '', category: 'All', equipment: 'All', requests: [], total: 0, hasMore: false,
+      equipmentList: [], categories: [], loaded: false, loading: false, error: ''
     },
     dashboard: { data: null, loaded: false, error: '' },
     prefetched: false,
@@ -955,31 +960,68 @@
   // Open tab
   // ======================================================================
 
+  // The machines shown when a category is selected, or null when the filter is
+  // "All" or the log has no categories set.
+  function categoryItems(categories, category) {
+    if (category === 'All') return null;
+    var g = (categories || []).filter(function (c) { return c.name === category; })[0];
+    return g ? g.items : [];
+  }
+
+  function chipHtml(c) {
+    return '<button class="chip" type="button" data-key="' + esc(c.key) +
+      '" aria-pressed="' + !!c.pressed + '">' + esc(c.label) + '</button>';
+  }
+
   function openVisible() {
-    return state.open.data.requests.filter(function (r) {
-      if (state.open.equipment !== 'All' && r.equipment !== state.open.equipment) return false;
-      if (state.open.onlyOpen && isClosed(r)) return false;
+    var o = state.open;
+    var items = categoryItems(o.data.categories, o.category);
+    return o.data.requests.filter(function (r) {
+      if (o.onlyOpen && isClosed(r)) return false;
+      if (o.equipment !== 'All') return r.equipment === o.equipment;
+      if (items) return items.indexOf(r.equipment) !== -1;
       return true;
     });
   }
 
   function renderOpenSubbar() {
-    var data = state.open.data;
-    var chips = [{ key: 'open', label: state.open.onlyOpen ? 'Open only' : 'All statuses', pressed: state.open.onlyOpen }];
-    ['All'].concat(data.equipmentList).forEach(function (name) {
-      chips.push({ key: 'e:' + name, label: name, pressed: state.open.equipment === name });
-    });
+    var o = state.open;
+    var groups = o.data.categories || [];
 
-    subbarEl.innerHTML = '<div class="filters">' + chips.map(function (c) {
-      return '<button class="chip" type="button" data-key="' + esc(c.key) +
-        '" aria-pressed="' + !!c.pressed + '">' + esc(c.label) + '</button>';
-    }).join('') + '</div>';
+    // Top row: the status toggle, then either category chips (grouped fleet) or
+    // the flat machine list (a log that never set categories).
+    var top = [{ key: 'open', label: o.onlyOpen ? 'Open only' : 'All statuses', pressed: o.onlyOpen }];
+    if (groups.length) {
+      top.push({ key: 'c:All', label: 'All', pressed: o.category === 'All' });
+      groups.forEach(function (g) {
+        top.push({ key: 'c:' + g.name, label: g.name, pressed: o.category === g.name });
+      });
+    } else {
+      top.push({ key: 'e:All', label: 'All', pressed: o.equipment === 'All' });
+      o.data.equipmentList.forEach(function (name) {
+        top.push({ key: 'e:' + name, label: name, pressed: o.equipment === name });
+      });
+    }
+    var html = '<div class="filters">' + top.map(chipHtml).join('') + '</div>';
 
+    // Second row: the machines inside the chosen category, so you only ever
+    // scroll one category's worth at a time.
+    var items = categoryItems(groups, o.category);
+    if (items) {
+      var sub = [{ key: 'e:All', label: 'All ' + o.category, pressed: o.equipment === 'All' }];
+      items.forEach(function (name) {
+        sub.push({ key: 'e:' + name, label: name, pressed: o.equipment === name });
+      });
+      html += '<div class="filters subfilters">' + sub.map(chipHtml).join('') + '</div>';
+    }
+
+    subbarEl.innerHTML = html;
     subbarEl.querySelectorAll('.chip').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var key = btn.dataset.key;
-        if (key === 'open') state.open.onlyOpen = !state.open.onlyOpen;
-        else state.open.equipment = key.slice(2);
+        if (key === 'open') o.onlyOpen = !o.onlyOpen;
+        else if (key.slice(0, 2) === 'c:') { o.category = key.slice(2); o.equipment = 'All'; }
+        else o.equipment = key.slice(2);
         render();
       });
     });
@@ -1004,8 +1046,11 @@
     var html = '';
 
     if (!items.length) {
+      var scope = state.open.equipment !== 'All' ? ' for the ' + esc(state.open.equipment) + '.'
+        : state.open.category !== 'All' ? ' in ' + esc(state.open.category) + '.'
+        : '.';
       html += '<div class="empty">' + (state.open.onlyOpen ? 'Nothing open' : 'Nothing logged') +
-        (state.open.equipment === 'All' ? '.' : ' for the ' + esc(state.open.equipment) + '.') + '</div>';
+        scope + '</div>';
     } else {
       html += items.map(function (r) { return cardHtml(r, true); }).join('');
       if (!state.open.onlyOpen && data.closedHidden) {
@@ -1156,10 +1201,38 @@
 
   function renderHistorySubbar() {
     var h = state.history;
-    var names = ['All'].concat(h.equipmentList.length
-      ? h.equipmentList
-      : (state.open.data ? state.open.data.equipmentList : []));
-    var signature = names.join('\u0000');
+    var groups = h.categories.length ? h.categories
+      : (state.open.data ? (state.open.data.categories || []) : []);
+    var flat = h.equipmentList.length ? h.equipmentList
+      : (state.open.data ? state.open.data.equipmentList : []);
+
+    // Two rows of chips (categories, then the machines in the chosen one), or a
+    // single flat row when the log has no categories set.
+    var top = [];
+    var sub = null;
+    if (groups.length) {
+      top.push({ key: 'c:All', label: 'All', pressed: h.category === 'All' });
+      groups.forEach(function (g) {
+        top.push({ key: 'c:' + g.name, label: g.name, pressed: h.category === g.name });
+      });
+      var items = categoryItems(groups, h.category);
+      if (items) {
+        sub = [{ key: 'e:All', label: 'All ' + h.category, pressed: h.equipment === 'All' }];
+        items.forEach(function (name) {
+          sub.push({ key: 'e:' + name, label: name, pressed: h.equipment === name });
+        });
+      }
+    } else {
+      top.push({ key: 'e:All', label: 'All', pressed: h.equipment === 'All' });
+      flat.forEach(function (name) {
+        top.push({ key: 'e:' + name, label: name, pressed: h.equipment === name });
+      });
+    }
+
+    // The set of chips that exist — a rebuild happens only when the rows change.
+    // Typing in the search box must not rebuild the field and lose focus.
+    var signature = JSON.stringify([top.map(function (c) { return c.key; }),
+                                    sub && sub.map(function (c) { return c.key; })]);
 
     var existing = document.getElementById('search');
     if (existing && signature === subbarChips) {
@@ -1170,7 +1243,9 @@
       }
       document.getElementById('clearSearch').hidden = !h.query;
       subbarEl.querySelectorAll('.chip').forEach(function (btn) {
-        btn.setAttribute('aria-pressed', String(btn.dataset.name === h.equipment));
+        var key = btn.dataset.key;
+        var on = key.slice(0, 2) === 'c:' ? h.category === key.slice(2) : h.equipment === key.slice(2);
+        btn.setAttribute('aria-pressed', String(on));
       });
       return;
     }
@@ -1181,12 +1256,10 @@
         '<input id="search" type="search" autocomplete="off" ' +
           'placeholder="Search ticket, machine or problem" value="' + esc(h.query) + '">' +
         '<button id="clearSearch" type="button" aria-label="Clear search"' +
-          (h.query ? '' : ' hidden') + '>×</button>' +
+          (h.query ? '' : ' hidden') + '>\u00d7</button>' +
       '</div>' +
-      '<div class="filters">' + names.map(function (name) {
-        return '<button class="chip" type="button" data-name="' + esc(name) +
-          '" aria-pressed="' + (h.equipment === name) + '">' + esc(name) + '</button>';
-      }).join('') + '</div>';
+      '<div class="filters">' + top.map(chipHtml).join('') + '</div>' +
+      (sub ? '<div class="filters subfilters">' + sub.map(chipHtml).join('') + '</div>' : '');
 
     var input = document.getElementById('search');
     input.addEventListener('input', function () {
@@ -1205,7 +1278,9 @@
 
     subbarEl.querySelectorAll('.chip').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        state.history.equipment = btn.dataset.name;
+        var key = btn.dataset.key;
+        if (key.slice(0, 2) === 'c:') { h.category = key.slice(2); h.equipment = 'All'; }
+        else h.equipment = key.slice(2);
         fetchHistory(true);
       });
     });
@@ -1230,6 +1305,7 @@
       h.total = result.total || 0;
       h.hasMore = !!result.hasMore;
       if (result.equipmentList) h.equipmentList = result.equipmentList;
+      if (result.categories) h.categories = result.categories;
       if (state.tab === 'history') render();
     }
     function fail(err) {
@@ -1248,7 +1324,8 @@
         .searchRequests({ query: query, limit: 50 });
     } else {
       google.script.run.withSuccessHandler(ok).withFailureHandler(fail)
-        .getHistory({ equipment: h.equipment, offset: h.requests.length, limit: PAGE });
+        .getHistory({ equipment: h.equipment, category: h.category,
+                      offset: h.requests.length, limit: PAGE });
     }
   }
 
