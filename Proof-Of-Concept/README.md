@@ -197,6 +197,50 @@ double-writes:
 
 ---
 
+## Troubleshooting
+
+**First step for anything: run `runDiagnostics()`** from the editor's function
+dropdown, then open **View → Logs**. It checks, in order, the things that stop
+the app working and prints the senders of the emails your search is matching
+(with whether each is trusted) — usually the answer is right there.
+
+### The Sheet is not filling in
+
+Most common causes, in order:
+1. **`poSenders` is still the example** (`orders@example-supplier.com`). Your
+   real supplier isn't trusted, so their email is skipped. `runDiagnostics()`
+   line 3 flags this and line 4 shows the real sender address to add.
+2. **`setUp()` was never run**, so there is no trigger and no watermark. Run it.
+3. **The Gmail advanced service isn't enabled.** In the editor, click
+   **Services (＋)**, add **Gmail API**, and save. (Line 4 of the diagnostics
+   reports this.)
+4. **The search doesn't match.** Widen `CONFIG.searchQuery` (e.g. the
+   `newer_than:` window or the subject words).
+
+### The web app hangs on "Loading…" / the button does nothing
+
+Almost always the page was **not opened from the deployed web app URL**. The
+dashboard only works at a URL ending in **`/exec`** (or a **Test deployment**
+URL) — opening the raw HTML file, or a stale deployment, leaves it unable to
+reach the server. The hardened page now says this instead of hanging. If it
+still stalls: **Deploy → Manage deployments**, confirm a web app deployment
+exists and is on the current version, and that you approved the script's
+permissions. A "Server error: …" or "Not authorised" message means the call is
+reaching the server — read the message; "Not authorised" means you're signed in
+with a non-`@millcreekplants.com` account.
+
+### Will pushing new commits delete the purchase orders already captured?
+
+**No.** The data lives in your **Google Sheet in Drive**, which is completely
+separate from this GitHub repo and from the Apps Script code. Editing or
+re-pasting the code never touches existing rows — the script only ever *appends*
+rows and never deletes. Re-running `setUp()` only rewrites the header row and
+re-checks the trigger; it leaves your data rows alone. (One caveat: this update
+adds two columns — Vendor SKU and Spec/Size. If you already have rows from the
+older layout, re-run `setUp()` to refresh the header; old rows keep their data
+but will sit one or two columns to the left of the new headers, so a clean
+re-import is tidiest if you captured orders under the old version.)
+
 ## Limits to be honest about (it's a proof of concept)
 
 - **The parser is the demo's soft spot.** It reads common layouts but will need

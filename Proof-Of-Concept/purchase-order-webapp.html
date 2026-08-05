@@ -165,27 +165,68 @@
     }).join('');
   }
 
+  var WATCHDOG_MS = 20000;   // if the server says nothing in 20s, stop "Loading…"
+
+  // google.script.run only exists when the page is served from the deployed web
+  // app (a URL ending in /exec, or a Test deployment). Opening the raw HTML file,
+  // or a stale/broken deployment, leaves it undefined — which is the usual reason
+  // the page hangs on "Loading…" and the button appears dead.
+  function serverUnavailable() {
+    return typeof google === 'undefined' || !google.script || !google.script.run;
+  }
+
+  function showBody(msg) {
+    document.getElementById('body').innerHTML =
+      '<tr><td class="empty">' + escapeHtml(msg) + '</td></tr>';
+  }
+
+  // Never let a display error masquerade as "still loading".
+  function safeRender(data) {
+    try {
+      render(data);
+    } catch (e) {
+      showBody('Data loaded, but could not be displayed: ' + (e && e.message || e));
+    }
+  }
+
   function load() {
+    if (serverUnavailable()) {
+      showBody('This page must be opened from the web app URL (it ends in /exec), ' +
+        'not the HTML preview. Deploy → Manage deployments, copy the Web app URL, ' +
+        'and open that.');
+      return;
+    }
+    var done = false;
+    var timer = setTimeout(function () {
+      if (!done) showBody('No response from the server after 20 seconds. Re-check ' +
+        'Deploy → Manage deployments, and that you approved the script’s permissions.');
+    }, WATCHDOG_MS);
+
     google.script.run
-      .withSuccessHandler(render)
+      .withSuccessHandler(function (data) { done = true; clearTimeout(timer); safeRender(data); })
       .withFailureHandler(function (err) {
-        document.getElementById('body').innerHTML =
-          '<tr><td class="empty">' + escapeHtml(err && err.message || err) + '</td></tr>';
+        done = true; clearTimeout(timer);
+        showBody('Server error: ' + (err && err.message || err));
       })
       .getDashboardData();
   }
 
   function checkNow() {
+    if (serverUnavailable()) {
+      alert('Open this page from the web app URL (ending in /exec) first — the button ' +
+        'needs the live app to reach the server.');
+      return;
+    }
     var btn = document.getElementById('check');
     btn.disabled = true; btn.textContent = 'Checking…';
     google.script.run
       .withSuccessHandler(function (data) {
         btn.disabled = false; btn.textContent = 'Check for new orders now';
-        render(data);
+        safeRender(data);
       })
       .withFailureHandler(function (err) {
         btn.disabled = false; btn.textContent = 'Check for new orders now';
-        alert(err && err.message || err);
+        alert('Could not check for orders: ' + (err && err.message || err));
       })
       .checkNow();
   }

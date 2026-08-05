@@ -140,9 +140,73 @@ function setUp() {
       .setProperty(PROP_KEY_WATERMARK, String(Date.now()));
   }
 
+  var senders = normaliseSenders_(CONFIG.poSenders);
+  var stillExample = !senders.length ||
+    (senders.length === 1 && senders[0] === 'orders@example-supplier.com');
+
   SpreadsheetApp.getActive().toast(
-    'Purchase Order Reader is set up. It will check for new orders every 15 minutes.',
-    'Ready', 8);
+    stillExample
+      ? 'Set up — but CONFIG.poSenders is still the example, so NO email will be ' +
+        'logged yet. Edit it to your real suppliers, then run runDiagnostics().'
+      : 'Purchase Order Reader is set up. It will check for new orders every 15 minutes.',
+    stillExample ? 'Action needed' : 'Ready', 10);
+}
+
+/**
+ * One-shot health check — run this from the editor and read View -> Logs when
+ * the sheet is not filling. It reports, in order, the things that stop rows
+ * from appearing: no trigger, an unset watermark, poSenders left as the
+ * example, the Gmail service not being enabled, and (most useful) the senders
+ * of the emails your search is actually matching, with whether each is allowed.
+ */
+function runDiagnostics() {
+  var out = ['=== Purchase Order Reader diagnostics ==='];
+  var props = PropertiesService.getScriptProperties();
+
+  var hasTrigger = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === 'processPurchaseOrders';
+  });
+  out.push('1. Trigger installed: ' + (hasTrigger ? 'yes' : 'NO  -> run setUp()'));
+
+  var wm = props.getProperty(PROP_KEY_WATERMARK);
+  out.push('2. Watermark: ' + (wm
+    ? Utilities.formatDate(new Date(Number(wm)), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') +
+      '  (only mail newer than this is considered)'
+    : 'NOT SET  -> run setUp()'));
+
+  var senders = normaliseSenders_(CONFIG.poSenders);
+  var stillExample = senders.length === 1 && senders[0] === 'orders@example-supplier.com';
+  out.push('3. Trusted senders: ' + (senders.length ? senders.join(', ') : '(none)') +
+    (stillExample ? '  <-- STILL THE EXAMPLE. Set CONFIG.poSenders to your suppliers.'
+                  : (!senders.length ? '  <-- EMPTY. Nothing is trusted, so nothing is logged.' : '')));
+
+  try {
+    var list = Gmail.Users.Messages.list('me', { q: CONFIG.searchQuery, maxResults: 5 });
+    var refs = (list && list.messages) || [];
+    out.push('4. Gmail service: OK. Your search matched ' + refs.length + ' recent message(s):');
+    refs.forEach(function (ref) {
+      var full = Gmail.Users.Messages.get('me', ref.id,
+        { format: 'metadata', metadataHeaders: ['From', 'Subject'] });
+      var from = headerValue_(full, 'From');
+      out.push('     - ' + from + '  |  ' + headerValue_(full, 'Subject') +
+        '  |  allowed=' + senderAllowed_(from, senders));
+    });
+    if (!refs.length) out.push('     (No matches. Widen CONFIG.searchQuery or check the subject words.)');
+  } catch (e) {
+    out.push('4. Gmail service: ERROR — ' + (e && e.message || e) +
+      '  -> Editor: Services (+) -> add "Gmail API", then save.');
+  }
+
+  var sheet = SpreadsheetApp.getActive().getSheetByName(CONFIG.sheetName);
+  out.push('5. Sheet "' + CONFIG.sheetName + '": ' +
+    (sheet ? Math.max(0, sheet.getLastRow() - 1) + ' data row(s)' : 'MISSING -> run setUp()'));
+
+  out.push('6. You are seen as: ' + (viewerEmail_() ||
+    '(empty / not a ' + CONFIG.workEmailDomain + ' account — the web app would refuse this login)'));
+
+  var report = out.join('\n');
+  Logger.log(report);
+  return report;
 }
 
 /** Create (or update the header of) the destination tab. */
