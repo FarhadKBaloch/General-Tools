@@ -66,9 +66,10 @@ afterward. Seven concrete properties:
    literal text, never a live formula. The dashboard is read-only and limited to
    `@millcreekplants.com` sign-ins, re-checked on the server for every request.
 
-**What this design deliberately does _not_ do:** send email, delete email, touch
-other spreadsheets, call outside services, or store any secret. Each of those is
-a door that is simply not built.
+**What this design deliberately does _not_ do:** send email, delete email, read
+or change other files already in your Drive, call outside services, or store any
+secret. The only files it creates are throwaway conversion documents it deletes
+seconds later. Each of the other doors is simply not built.
 
 ### The exact permissions it asks for
 
@@ -77,8 +78,9 @@ this and nothing more. Each is the narrowest scope that still works:
 
 | Scope | What it grants | What it cannot do |
 | --- | --- | --- |
-| `gmail.readonly` | Read messages | Send, reply, delete, or edit any mail |
+| `gmail.readonly` | Read messages and their attachments | Send, reply, delete, or edit any mail |
 | `spreadsheets.currentonly` | Write to the one bound sheet | Open or touch any other Drive file |
+| `drive.file` | Create and manage **only files this app itself creates** | See, read, or change anything else already in your Drive |
 | `script.scriptapp` | Create the 15-minute trigger | — |
 | `userinfo.email` | See the signed-in address (for the domain lock) | Read any other profile data |
 
@@ -86,6 +88,21 @@ this and nothing more. Each is the narrowest scope that still works:
 > *advanced service* (enabled in the manifest). The convenient `GmailApp` class
 > would force the far broader `https://mail.google.com/` scope — full send and
 > delete — which is exactly what we avoid.
+>
+> `drive.file` exists only for reading PDF attachments (see below). It is the
+> narrowest Drive scope there is: the app can touch the throwaway document it
+> creates to read a PDF, and nothing else in your Drive — not even the
+> spreadsheet, which is reached through its own `currentonly` scope.
+
+### How a PDF order is read
+
+Most suppliers send the order as a **PDF attachment**, not body text. To read
+one, the script asks **Google's own converter** to turn the PDF into a
+temporary Google Doc (this is what performs OCR on a scanned page, or lifts the
+text out of a digital one), reads that Doc's text, and then **deletes the
+temporary Doc immediately**. The PDF is never uploaded anywhere outside your
+Workspace and never touches a third-party service — the conversion happens
+inside Google. This is the *only* reason `drive.file` is requested.
 
 ---
 
@@ -106,7 +123,10 @@ that sheet.
 - Show the manifest with the **gear icon (Project Settings) → “Show
   ‘appsscript.json’ manifest file”**, then paste in `appsscript.json`. This step
   is what pins the least-privilege scopes and enables the read-only Gmail
-  service.
+  service and the Drive service used to read PDFs.
+- Confirm both advanced services are on: in the editor sidebar click
+  **Services (＋)** and make sure **Gmail API** and **Drive API** are both
+  listed (pasting the manifest usually adds them; add any that is missing).
 
 ### 3. Edit `CONFIG`
 At the top of `purchase-order-reader.gs`, set at least:
@@ -136,9 +156,23 @@ sensible generic patterns and a built-in test. To tune it:
 3. Adjust the regexes in `parseLineItem_()` / `parsePurchaseOrder_()` until the
    log matches the email. The comments explain each pattern.
 
-Out of the box it already handles two common layouts:
-- table rows — `Echinacea 'Magnus'   200   1.85   370.00`, and
-- inline lines — `300 x Salvia May Night @ $1.40 = $420.00`.
+Out of the box it already handles the common layouts:
+- **pipe / Markdown tables** (how most PO emails present line items) —
+  `| SKU | Botanical Name | Spec | Qty | Unit Price | Line Total |`. Columns are
+  matched **by header name**, so a supplier can reorder or add columns without
+  breaking anything, and the Vendor SKU and container spec are captured too.
+  Non-item tables in the same email (a Ship-To / Bill-To block) are ignored
+  because they have no quantity or price columns.
+- **whitespace tables** — `Echinacea 'Magnus'   200   1.85   370.00`, and
+- **inline lines** — `300 x Salvia May Night @ $1.40 = $420.00`.
+
+The order number is only accepted when it follows an order/PO cue **and** a
+`:` or `#` **and** contains a digit — so a heading like "PURCHASE ORDER SUMMARY"
+or the phrase "purchase order on behalf of…" is never mistaken for one.
+
+Two self-tests ship with the script: `runParserSelfTest` (pipe-table format)
+and `runFallbackSelfTest` (plain-text supplier). Run either from the editor and
+read **View → Logs**.
 
 ### 6. (Optional) Publish the dashboard
 **Deploy → New deployment → Web app.** Set **Execute as: Me** and **Who has
@@ -183,11 +217,77 @@ double-writes:
 
 ---
 
+## Troubleshooting
+
+**First step for anything: run `runDiagnostics()`** from the editor's function
+dropdown, then open **View → Logs**. It checks, in order, the things that stop
+the app working and prints the senders of the emails your search is matching
+(with whether each is trusted) — usually the answer is right there.
+
+### The Sheet is not filling in
+
+Most common causes, in order:
+1. **`poSenders` is still the example** (`orders@example-supplier.com`). Your
+   real supplier isn't trusted, so their email is skipped. `runDiagnostics()`
+   line 3 flags this and line 4 shows the real sender address to add.
+2. **`setUp()` was never run**, so there is no trigger and no watermark. Run it.
+3. **The Gmail advanced service isn't enabled.** In the editor, click
+   **Services (＋)**, add **Gmail API**, and save. (Line 4 of the diagnostics
+   reports this.)
+4. **The search doesn't match.** Widen `CONFIG.searchQuery` (e.g. the
+   `newer_than:` window or the subject words).
+
+### Orders arrive as PDF attachments
+
+The reader converts each attached PDF to text with Google's own OCR (see
+[How a PDF order is read](#how-a-pdf-order-is-read)). Two helpers make tuning
+easy:
+- **`dumpLatestPdfText()`** — run it, open **View → Logs**, and it prints the
+  text extracted from your newest supplier PDF plus what the parser found. This
+  is the fastest way to see how a supplier's PDF flattens to text so the parser
+  can be adjusted to it (exactly how the email parser was tuned).
+- **`backfillDays(14)`** — the scheduled reader ignores mail older than the
+  watermark, so orders that arrived before `setUp()` are skipped. This looks
+  back N days and runs once to pull them in; already-logged order numbers are
+  de-duplicated.
+
+PDF layouts vary a lot between suppliers, so expect to tune the parser's
+patterns per supplier using `dumpLatestPdfText()`. Scanned/photographed PDFs are
+OCR'd but are less reliable than digitally generated ones.
+
+### The web app hangs on "Loading…" / the button does nothing
+
+Almost always the page was **not opened from the deployed web app URL**. The
+dashboard only works at a URL ending in **`/exec`** (or a **Test deployment**
+URL) — opening the raw HTML file, or a stale deployment, leaves it unable to
+reach the server. The hardened page now says this instead of hanging. If it
+still stalls: **Deploy → Manage deployments**, confirm a web app deployment
+exists and is on the current version, and that you approved the script's
+permissions. A "Server error: …" or "Not authorised" message means the call is
+reaching the server — read the message; "Not authorised" means you're signed in
+with a non-`@millcreekplants.com` account.
+
+### Will pushing new commits delete the purchase orders already captured?
+
+**No.** The data lives in your **Google Sheet in Drive**, which is completely
+separate from this GitHub repo and from the Apps Script code. Editing or
+re-pasting the code never touches existing rows — the script only ever *appends*
+rows and never deletes. Re-running `setUp()` only rewrites the header row and
+re-checks the trigger; it leaves your data rows alone. (One caveat: this update
+adds two columns — Vendor SKU and Spec/Size. If you already have rows from the
+older layout, re-run `setUp()` to refresh the header; old rows keep their data
+but will sit one or two columns to the left of the new headers, so a clean
+re-import is tidiest if you captured orders under the old version.)
+
 ## Limits to be honest about (it's a proof of concept)
 
-- **The parser is the demo's soft spot.** It reads common layouts but will need
-  tuning per supplier (step 5). PDF-attachment-only POs would need OCR, which is
-  out of scope here.
+- **The parser is the demo's soft spot.** It reads common layouts from both the
+  email body and PDF attachments, but the exact patterns will need tuning per
+  supplier (step 5, and `dumpLatestPdfText()` for PDFs). Scanned/photographed
+  PDFs are OCR'd but less reliable than digitally generated ones.
+- **PDF reading costs a little time and quota** — each PDF is converted through a
+  temporary Google Doc. Fine at nursery order volumes; not built for thousands a
+  day.
 - **~15-minute latency**, since it polls on a schedule rather than reacting the
   instant mail arrives. Fine for orders; not for anything real-time.
 - **Owner-bound.** It runs as whoever set it up and approved the scopes. If that

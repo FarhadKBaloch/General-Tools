@@ -103,12 +103,15 @@ var CONFIG = {
 var COLUMNS = [
   { header: 'Logged At',        key: '_loggedAt'   },
   { header: 'Order Number',     key: 'orderNumber' },
+  { header: 'Vendor SKU',       key: 'sku'         },
   { header: 'Plant / Item',     key: 'itemName'    },
+  { header: 'Spec / Size',      key: 'spec'        },
   { header: 'Units',            key: 'units'       },
   { header: 'Unit Cost',        key: 'unitCost'    },
-  { header: 'Total Cost',       key: 'totalCost'   },
+  { header: 'Line Total',       key: 'totalCost'   },
   { header: 'Supplier',         key: 'supplier'    },
   { header: 'Order Date',       key: 'orderDate'   },
+  { header: 'Source',           key: '_source'     },
   { header: 'From',             key: '_from'       },
   { header: 'Email Subject',    key: '_subject'    },
   { header: 'Gmail Link',       key: '_gmailLink'  }
@@ -138,9 +141,123 @@ function setUp() {
       .setProperty(PROP_KEY_WATERMARK, String(Date.now()));
   }
 
+  var senders = normaliseSenders_(CONFIG.poSenders);
+  var stillExample = !senders.length ||
+    (senders.length === 1 && senders[0] === 'orders@example-supplier.com');
+
   SpreadsheetApp.getActive().toast(
-    'Purchase Order Reader is set up. It will check for new orders every 15 minutes.',
-    'Ready', 8);
+    stillExample
+      ? 'Set up — but CONFIG.poSenders is still the example, so NO email will be ' +
+        'logged yet. Edit it to your real suppliers, then run runDiagnostics().'
+      : 'Purchase Order Reader is set up. It will check for new orders every 15 minutes.',
+    stillExample ? 'Action needed' : 'Ready', 10);
+}
+
+/**
+ * One-shot health check — run this from the editor and read View -> Logs when
+ * the sheet is not filling. It reports, in order, the things that stop rows
+ * from appearing: no trigger, an unset watermark, poSenders left as the
+ * example, the Gmail service not being enabled, and (most useful) the senders
+ * of the emails your search is actually matching, with whether each is allowed.
+ */
+function runDiagnostics() {
+  var out = ['=== Purchase Order Reader diagnostics ==='];
+  var props = PropertiesService.getScriptProperties();
+
+  var hasTrigger = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === 'processPurchaseOrders';
+  });
+  out.push('1. Trigger installed: ' + (hasTrigger ? 'yes' : 'NO  -> run setUp()'));
+
+  var wm = props.getProperty(PROP_KEY_WATERMARK);
+  out.push('2. Watermark: ' + (wm
+    ? Utilities.formatDate(new Date(Number(wm)), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') +
+      '  (only mail newer than this is considered)'
+    : 'NOT SET  -> run setUp()'));
+
+  var senders = normaliseSenders_(CONFIG.poSenders);
+  var stillExample = senders.length === 1 && senders[0] === 'orders@example-supplier.com';
+  out.push('3. Trusted senders: ' + (senders.length ? senders.join(', ') : '(none)') +
+    (stillExample ? '  <-- STILL THE EXAMPLE. Set CONFIG.poSenders to your suppliers.'
+                  : (!senders.length ? '  <-- EMPTY. Nothing is trusted, so nothing is logged.' : '')));
+
+  try {
+    var list = Gmail.Users.Messages.list('me', { q: CONFIG.searchQuery, maxResults: 5 });
+    var refs = (list && list.messages) || [];
+    out.push('4. Gmail service: OK. Your search matched ' + refs.length + ' recent message(s):');
+    refs.forEach(function (ref) {
+      var full = Gmail.Users.Messages.get('me', ref.id, { format: 'full' });
+      var from = headerValue_(full, 'From');
+      var pdfs = extractPdfAttachments_(full.payload).length;
+      out.push('     - ' + from + '  |  ' + headerValue_(full, 'Subject') +
+        '  |  allowed=' + senderAllowed_(from, senders) + '  |  pdfs=' + pdfs);
+    });
+    if (!refs.length) out.push('     (No matches. Widen CONFIG.searchQuery or check the subject words.)');
+  } catch (e) {
+    out.push('4. Gmail service: ERROR — ' + (e && e.message || e) +
+      '  -> Editor: Services (+) -> add "Gmail API", then save.');
+  }
+
+  var sheet = SpreadsheetApp.getActive().getSheetByName(CONFIG.sheetName);
+  out.push('5. Sheet "' + CONFIG.sheetName + '": ' +
+    (sheet ? Math.max(0, sheet.getLastRow() - 1) + ' data row(s)' : 'MISSING -> run setUp()'));
+
+  out.push('6. You are seen as: ' + (viewerEmail_() ||
+    '(empty / not a ' + CONFIG.workEmailDomain + ' account — the web app would refuse this login)'));
+
+  var report = out.join('\n');
+  Logger.log(report);
+  return report;
+}
+
+/**
+ * Reprocess mail from the last N days (default 7), once, by hand.
+ *
+ * The scheduled reader only looks at mail newer than the watermark, so orders
+ * that arrived before setUp() are skipped. Run this to pull them in — it moves
+ * the watermark back, runs once, and then normal scheduling resumes from the
+ * newest message. Already-logged order numbers are still de-duplicated.
+ */
+function backfillDays(days) {
+  days = Number(days) || 7;
+  var since = Date.now() - days * 24 * 60 * 60 * 1000;
+  PropertiesService.getScriptProperties().setProperty(PROP_KEY_WATERMARK, String(since));
+  processPurchaseOrders();
+  var msg = 'Looked back ' + days + ' day(s) and ran once. Check the "' +
+    CONFIG.sheetName + '" tab; run runDiagnostics() if nothing appeared.';
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * Print the text extracted from the newest allowed PDF, without writing a row.
+ *
+ * Use this to see exactly how a supplier's PDF flattens to text, so the parser
+ * can be tuned to it (the same way SAMPLE_PO was tuned for the email body).
+ * Run it, then read View -> Logs.
+ */
+function dumpLatestPdfText() {
+  var senders = normaliseSenders_(CONFIG.poSenders);
+  var messages = findCandidateMessages_(CONFIG.searchQuery, CONFIG.maxThreadsPerRun);
+
+  for (var i = 0; i < messages.length; i++) {
+    var msg = messages[i];
+    if (!senderAllowed_(msg.from, senders)) continue;
+    var atts = msg.attachments || [];
+    if (!atts.length) continue;
+
+    var text = safeAttachmentText_(msg.id, atts[0]);
+    Logger.log('From:    %s\nSubject: %s\nPDF:     %s\n' +
+      '----- extracted text (first 4000 chars) -----\n%s',
+      msg.from, msg.subject, atts[0].filename, String(text).slice(0, 4000));
+
+    var parsed = parsePurchaseOrder_(text, msg.subject);
+    Logger.log('----- what the parser found -----\norder=%s  supplier=%s  items=%s',
+      parsed.orderNumber, parsed.supplier, parsed.items.length);
+    return text;
+  }
+  Logger.log('No allowed message with a PDF attachment found in the search window.');
+  return '';
 }
 
 /** Create (or update the header of) the destination tab. */
@@ -202,18 +319,30 @@ function processPurchaseOrders() {
 
       if (!senderAllowed_(msg.from, senders)) return;     // untrusted sender: ignore
 
-      var parsed = parsePurchaseOrder_(msg.body, msg.subject) || {};
-      var order = String(parsed.orderNumber || '').trim();
-      if (!order) return;                                 // couldn't identify the PO
-      if (seenOrders[order.toLowerCase()]) return;        // already logged this PO
-      seenOrders[order.toLowerCase()] = true;
+      // Each message yields several things to try: the email body, plus the text
+      // of every PDF attachment (most real POs ride in as a PDF). Each source is
+      // parsed independently, so one email can carry more than one order.
+      var sources = [{ label: 'email body', text: msg.body }];
+      (msg.attachments || []).forEach(function (att) {
+        var text = safeAttachmentText_(msg.id, att);
+        if (text) sources.push({ label: att.filename, text: text });
+      });
 
-      var items = Array.isArray(parsed.items) && parsed.items.length
-        ? parsed.items
-        : [parsed];                                       // single-item fallback
+      sources.forEach(function (src) {
+        var parsed = parsePurchaseOrder_(src.text, msg.subject) || {};
+        var order = String(parsed.orderNumber || '').trim();
+        if (!order) return;                               // couldn't identify a PO here
+        if (seenOrders[order.toLowerCase()]) return;      // already logged this PO
+        seenOrders[order.toLowerCase()] = true;
+        parsed._source = src.label;
 
-      items.forEach(function (item) {
-        rowsToAppend.push(buildRow_(item, parsed, msg));
+        var items = Array.isArray(parsed.items) && parsed.items.length
+          ? parsed.items
+          : [parsed];                                     // single-item fallback
+
+        items.forEach(function (item) {
+          rowsToAppend.push(buildRow_(item, parsed, msg));
+        });
       });
     });
 
@@ -259,6 +388,7 @@ function findCandidateMessages_(query, maxThreads) {
       from: headerValue_(full, 'From'),
       subject: headerValue_(full, 'Subject'),
       body: extractPlainText_(full.payload),
+      attachments: extractPdfAttachments_(full.payload),
       gmailLink: 'https://mail.google.com/mail/u/0/#all/' + (full.threadId || ref.id)
     });
   });
@@ -324,6 +454,83 @@ function decodeBase64Url_(data) {
     return Utilities.newBlob(bytes).getDataAsString('UTF-8');
   } catch (err) {
     return '';
+  }
+}
+
+// ===========================================================================
+// PDF ATTACHMENTS — read the order out of the attached PDF.
+// ===========================================================================
+//
+// Most suppliers send the purchase order as a PDF, not as body text. We read it
+// with Google's OWN converter: the attachment is turned into a temporary Google
+// Doc (which OCRs a scanned page and lifts the text out of a digital one), we
+// read that text, then delete the temporary Doc immediately. The PDF never
+// leaves the Workspace and never touches a third party. The only added
+// permission is drive.file — create and manage files THIS app makes — so the
+// script can make and delete its own scratch Doc and nothing else in Drive.
+
+/** List the PDF parts of a message payload as {filename, attachmentId, mimeType}. */
+function extractPdfAttachments_(payload) {
+  var out = [];
+  (function walk(part) {
+    if (!part) return;
+    var filename = part.filename || '';
+    var mime = part.mimeType || '';
+    var attId = part.body && part.body.attachmentId;
+    if (attId && (mime === 'application/pdf' || /\.pdf$/i.test(filename))) {
+      out.push({ filename: filename || 'attachment.pdf', attachmentId: attId, mimeType: mime });
+    }
+    (part.parts || []).forEach(walk);
+  })(payload);
+  return out;
+}
+
+/** Read an attachment's text, never throwing — a bad PDF must not stop the run. */
+function safeAttachmentText_(messageId, att) {
+  try {
+    return attachmentText_(messageId, att);
+  } catch (e) {
+    Logger.log('PDF read failed for "%s": %s', att.filename, (e && e.message) || e);
+    return '';
+  }
+}
+
+/** Fetch a PDF attachment (read-only Gmail) and return its extracted text. */
+function attachmentText_(messageId, att) {
+  var res = Gmail.Users.Messages.Attachments.get('me', messageId, att.attachmentId);
+  if (!res || !res.data) return '';
+  var bytes = Utilities.base64DecodeWebSafe(res.data);
+  var blob = Utilities.newBlob(bytes, att.mimeType || 'application/pdf', att.filename || 'po.pdf');
+  // Tabs become spaces so the whitespace-table branch of the parser can see the
+  // columns a converted PDF table flattens into.
+  return String(pdfBlobToText_(blob) || '').replace(/\t/g, '   ');
+}
+
+/**
+ * Convert a PDF blob to text via a throwaway Google Doc, then delete the Doc.
+ *
+ * Setting the target type to a Google Doc makes Drive convert (and OCR) the
+ * PDF; exporting that Doc as text/plain gives us the words. Everything here is
+ * an app-created file, so drive.file is all it needs.
+ */
+function pdfBlobToText_(pdfBlob) {
+  var meta = {
+    name: 'po-reader-temp-' + Date.now(),
+    mimeType: 'application/vnd.google-apps.document'
+  };
+  var created = Drive.Files.create(meta, pdfBlob, { ocrLanguage: 'en', fields: 'id' });
+  var id = created && created.id;
+  if (!id) return '';
+
+  try {
+    var exported = Drive.Files.export(id, 'text/plain');
+    if (typeof exported === 'string') return exported;
+    if (exported && typeof exported.getDataAsString === 'function') {
+      return exported.getDataAsString('UTF-8');
+    }
+    return '';
+  } finally {
+    try { Drive.Files.remove(id); } catch (e) { /* best-effort cleanup of the scratch Doc */ }
   }
 }
 
@@ -399,27 +606,37 @@ function extractAddress_(fromHeader) {
 function parsePurchaseOrder_(body, subject) {
   var text = String(body || '');
   var subjectText = String(subject || '');
+  var lines = text.split(/\r?\n/);
 
   // --- A. Header fields -------------------------------------------------
+  // The order number MUST be preceded by an order/PO cue AND a ":" or "#", and
+  // MUST contain a digit. That rules out false hits like the heading "PURCHASE
+  // ORDER SUMMARY" or the phrase "purchase order on behalf of ...".
   var orderNumber =
-    firstMatch_(text, /\b(?:P\.?O\.?|purchase\s*order|order)\s*(?:number|no\.?|#)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i) ||
-    firstMatch_(subjectText, /\b(?:P\.?O\.?|order)\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i);
+    firstToken_(text, /\b(?:purchase\s*order|p\.?o\.?|order)\s*(?:number|no\.?|#)?\s*[:#]\s*([A-Za-z0-9][\w\-\/]{2,})/i) ||
+    firstToken_(subjectText, /\b(?:purchase\s*order|p\.?o\.?|order)\s*(?:number|no\.?|#)?\s*[:#]?\s*([A-Za-z0-9][\w\-\/]{2,})/i);
 
+  // "Supplier:" / "Vendor:" if present; otherwise "on behalf of <Company>".
+  // Leading bullets (*, -, •) are tolerated on labelled lines.
   var supplier =
-    firstMatch_(text, /^\s*(?:supplier|vendor|from|sold\s*by)\s*[:]\s*(.+?)\s*$/im);
+    firstMatch_(text, /^[\s*•\-]*(?:supplier|vendor|sold\s*by)\s*:\s*(.+?)\s*$/im) ||
+    firstMatch_(text, /on\s+behalf\s+of\s+(.+?)\s*[.,\n]/i);
 
   var orderDate =
-    firstMatch_(text, /^\s*(?:order\s*date|date|po\s*date)\s*[:]\s*(.+?)\s*$/im);
+    firstMatch_(text, /^[\s*•\-]*(?:order\s*date|po\s*date)\s*:\s*(.+?)\s*$/im) ||
+    firstMatch_(text, /^[\s*•\-]*date\s*:\s*(.+?)\s*$/im);
 
   // --- B. Line items ----------------------------------------------------
-  // A line item is any line ending in <units> <unit-cost> <total>, e.g.:
-  //   Echinacea 'Magnus'    200    1.85    370.00
-  //   200 x Rudbeckia Goldsturm @ $1.60 = $320.00
-  var items = [];
-  text.split(/\r?\n/).forEach(function (line) {
-    var item = parseLineItem_(line);
-    if (item) items.push(item);
-  });
+  // Preferred: a pipe-delimited table (Markdown / pasted spreadsheet), which is
+  // how most modern PO emails present their line items. Fall back to the
+  // one-line-per-item patterns for plain-text orders.
+  var items = parseTableItems_(lines);
+  if (!items.length) {
+    lines.forEach(function (line) {
+      var item = parseLineItem_(line);
+      if (item) items.push(item);
+    });
+  }
 
   return {
     orderNumber: orderNumber,
@@ -427,6 +644,118 @@ function parsePurchaseOrder_(body, subject) {
     orderDate: orderDate,
     items: items
   };
+}
+
+// ---------------------------------------------------------------------------
+// Pipe-table parser
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract line items from any pipe-delimited table whose header row names a
+ * quantity, a unit price and a line total. Other tables in the same email (a
+ * Ship-To / Bill-To block, say) have no such columns, so they are ignored.
+ *
+ * Columns are matched BY HEADER NAME, so suppliers can reorder or add columns
+ * without breaking anything — the SKU and container spec are captured too when
+ * the table offers them.
+ */
+function parseTableItems_(lines) {
+  var items = [];
+  var map = null;   // active column map, or null when we are not inside an items table
+
+  for (var i = 0; i < lines.length; i++) {
+    var cells = splitPipeRow_(lines[i]);
+
+    if (!cells) { map = null; continue; }   // a non-table line ends the table
+    if (isSeparatorRow_(cells)) continue;    // the |---|---| divider
+
+    if (!map) {
+      map = mapColumns_(cells);              // is THIS an items header? (null if not)
+      continue;                              // header row itself carries no data
+    }
+
+    var item = rowToItem_(cells, map);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+/**
+ * Split a "| a | b | c |" row into trimmed cell values, dropping the empty
+ * cells the outer pipes create. Returns null for any line that is not a table
+ * row (fewer than two pipes), which is how the parser knows a table has ended.
+ */
+function splitPipeRow_(line) {
+  var s = String(line || '');
+  if ((s.match(/\|/g) || []).length < 2) return null;
+
+  var cells = s.split('|').map(function (c) { return c.trim(); });
+  if (cells.length && cells[0] === '') cells.shift();
+  if (cells.length && cells[cells.length - 1] === '') cells.pop();
+  return cells.length ? cells : null;
+}
+
+/** True for a Markdown divider row like |---|:--:|---| . */
+function isSeparatorRow_(cells) {
+  return cells.every(function (c) { return /^:?-{2,}:?$/.test(c) || c === ''; }) &&
+         cells.some(function (c) { return /-/.test(c); });
+}
+
+/**
+ * If these header cells describe a line-item table, return a map of the
+ * columns we care about; otherwise null. Requires at least a quantity column
+ * plus a unit price or a line total — enough to tell an order table apart from
+ * an address table.
+ */
+function mapColumns_(headerCells) {
+  var qty   = findHeader_(headerCells, /\bqty\b|quantit|\bunits?\b|\bcount\b/i);
+  var unit  = findHeader_(headerCells, /unit\s*(?:price|cost)|price\s*each|\beach\b|price\s*\(/i);
+  var total = findHeader_(headerCells, /line\s*(?:total|amount)|ext(?:ended)?\s*(?:price|cost)|\bamount\b|\btotal\b/i);
+  if (qty === -1 || (unit === -1 && total === -1)) return null;
+
+  var name = findHeader_(headerCells, /botanical|common|description|product|plant/i);
+  if (name === -1) name = findHeader_(headerCells, /\bname\b/i);
+  if (name === -1) name = findHeader_(headerCells, /\bitem\b(?!\s*#)/i);
+
+  // Prefer a real product code column; only fall back to a line-number ("Item #")
+  // column if there is no dedicated SKU/part-number column.
+  var sku = findHeader_(headerCells, /\bsku\b|part\s*(?:#|no)|\bmpn\b|\bupc\b|item\s*code|\bcode\b/i);
+  if (sku === -1) sku = findHeader_(headerCells, /item\s*#|item\s*no|line\s*#/i);
+
+  return {
+    name:  name,
+    qty:   qty,
+    unit:  unit,
+    total: total,
+    sku:   sku,
+    spec:  findHeader_(headerCells, /spec|container|\bsize\b|grade|form/i)
+  };
+}
+
+/** Index of the first header cell matching re, or -1. */
+function findHeader_(cells, re) {
+  for (var i = 0; i < cells.length; i++) {
+    if (re.test(cells[i])) return i;
+  }
+  return -1;
+}
+
+/** Turn one data row into a line item using the column map, or null. */
+function rowToItem_(cells, map) {
+  var at = function (idx) { return idx >= 0 && idx < cells.length ? cells[idx] : ''; };
+
+  var units = toNumber_(at(map.qty));
+  var item = finishItem_(at(map.name), units, toNumber_(at(map.unit)), toNumber_(at(map.total)));
+  if (!item) return null;
+
+  item.sku = plainish_(at(map.sku));
+  item.spec = plainish_(at(map.spec));
+  return item;
+}
+
+/** Trim and collapse internal whitespace; used for free-text cells. */
+function plainish_(value) {
+  return String(value || '').replace(/\s{2,}/g, ' ').trim();
 }
 
 /**
@@ -496,12 +825,15 @@ function buildRow_(item, order, msg) {
   var value = {
     _loggedAt: loggedAt,
     orderNumber: order.orderNumber || '',
+    sku: item.sku || '',
     itemName: item.itemName || '',
+    spec: item.spec || '',
     units: numberOrText_(item.units),
     unitCost: numberOrText_(item.unitCost),
     totalCost: numberOrText_(item.totalCost),
     supplier: order.supplier || extractAddress_(msg.from) || '',
     orderDate: order.orderDate || '',
+    _source: order._source || 'email body',
     _from: msg.from || '',
     _subject: msg.subject || '',
     _gmailLink: msg.gmailLink || ''
@@ -587,7 +919,7 @@ function getDashboardData() {
 
   var width = COLUMNS.length;
   var take = Math.min(50, lastRow - 1);
-  var values = sheet.getRange(lastRow - take + 1, 1, take, width).getValues();
+  var values = toPlainRows_(sheet.getRange(lastRow - take + 1, 1, take, width).getValues());
   values.reverse();   // newest first
 
   var idx = keyIndex_();
@@ -601,17 +933,50 @@ function getDashboardData() {
     headers: COLUMNS.map(function (c) { return c.header; }),
     rows: values,
     totalRows: lastRow - 1,
-    totalUnits: totalUnits,
-    totalSpend: round2_(totalSpend),
+    totalUnits: totalUnits || 0,
+    totalSpend: round2_(totalSpend) || 0,
     lastRun: lastRunLabel_()
   };
 }
 
-/** Let the dashboard "Check now" button trigger a run on demand. */
+/**
+ * Convert a getValues() grid into a JSON-safe grid for the web app.
+ *
+ * google.script.run can hand a Date back to the browser as null — and a single
+ * illegal value can blank the WHOLE response, which is why the dashboard once
+ * received null and could not render. Dates become formatted text and empty
+ * cells become ''; strings, numbers and booleans pass straight through.
+ */
+function toPlainRows_(grid) {
+  var tz = Session.getScriptTimeZone();
+  return grid.map(function (row) {
+    return row.map(function (cell) {
+      if (cell instanceof Date) return Utilities.formatDate(cell, tz, 'yyyy-MM-dd HH:mm');
+      return (cell === null || cell === undefined) ? '' : cell;
+    });
+  });
+}
+
+/**
+ * Let the dashboard "Check now" button trigger a run on demand.
+ *
+ * A failure inside the run (e.g. the Gmail service not being enabled) is caught
+ * and returned as `runError` rather than thrown, so the button always gets back
+ * a well-formed payload and can show what happened instead of failing blankly.
+ */
 function checkNow() {
   if (!viewerEmail_()) throw new Error('Not authorised.');
-  processPurchaseOrders();
-  return getDashboardData();
+
+  var runError = '';
+  try {
+    processPurchaseOrders();
+  } catch (e) {
+    runError = String((e && e.message) || e);
+  }
+
+  var data = getDashboardData();
+  data.runError = runError;
+  return data;
 }
 
 /** Map each COLUMNS key to its zero-based position. */
@@ -659,6 +1024,23 @@ function firstMatch_(text, re) {
   return m && m[1] ? m[1].trim() : '';
 }
 
+/**
+ * First captured token that contains a digit, or '' . Used for the order
+ * number so a text-only match (a heading, a stray "purchase order" in prose)
+ * is skipped in favour of something that actually looks like an order id.
+ */
+function firstToken_(text, re) {
+  var flags = re.flags.indexOf('g') === -1 ? re.flags + 'g' : re.flags;
+  var re2 = new RegExp(re.source, flags);
+  var m;
+  while ((m = re2.exec(String(text || ''))) !== null) {
+    var val = (m[1] || '').trim();
+    if (/\d/.test(val)) return val;
+    if (m.index === re2.lastIndex) re2.lastIndex++;   // guard against zero-width loops
+  }
+  return '';
+}
+
 /** Parse "$1,234.50" / "1,234.5" / "200" to a Number, or NaN. */
 function toNumber_(s) {
   if (typeof s === 'number') return s;
@@ -691,35 +1073,79 @@ function reportError_(err) {
 // SELF-TEST — prove the parser works before you wire up real mail.
 // ===========================================================================
 
-// A sanitised sample PO. Replace this with a real (scrubbed) email body to
-// tune parsePurchaseOrder_() to your suppliers, then run runParserSelfTest().
+// A sanitised sample PO in the pipe-table format most suppliers send. Replace
+// this with a real (scrubbed) email body to tune the parser to a new supplier,
+// then run runParserSelfTest(). The plain-text fallback patterns are covered by
+// runFallbackSelfTest() below.
 var SAMPLE_PO = [
-  'Purchase Order #: PO-10432',
-  'Supplier: Example Grower Co.',
-  'Order Date: 2026-08-01',
+  'Dear Oakridge Wholesale Team,',
+  'Please accept the following purchase order on behalf of Apex Flora Sourcing Co.',
   '',
-  'Item                         Units    Unit Cost   Total',
-  "Echinacea 'Magnus'           200      1.85        370.00",
-  "Rudbeckia 'Goldsturm'        150      1.60        240.00",
-  '300 x Salvia May Night @ $1.40 = $420.00',
+  'PURCHASE ORDER SUMMARY',
+  ' * Purchase Order Number: PO-2026-08942',
+  ' * Order Date: August 5, 2026',
+  ' * Requested Ship Date: August 11, 2026',
+  ' * Payment Terms: Net 30 (Per Master Vendor Agreement #AV-402)',
   '',
-  'Order Total: 1030.00'
+  'DELIVERY & BILLING INFORMATION',
+  '| Ship To (Delivery Address) | Bill To (Invoicing Address) |',
+  '|---|---|',
+  '| Apex Flora Receiving Hub — Dock B | Apex Flora Sourcing Co. |',
+  '| 1420 Nursery Way, Building 4 | P.O. Box 88102 |',
+  '',
+  'ORDER SPECIFICATIONS',
+  '| Item # | Vendor SKU | Botanical / Common Name | Spec / Container Size | Qty | Unit Price ($) | Line Total ($) |',
+  '|---|---|---|---|---|---|---|',
+  "| 01 | AP-BL-03 | Acer palmatum 'Bloodgood' | #3 Container (Heavy) | 35 | 38.50 | 1,347.50 |",
+  "| 02 | BM-WG-02 | Buxus microphylla 'Winter Gem' | #2 Container | 120 | 14.25 | 1,710.00 |",
+  "| 03 | EP-M-72P | Echinacea purpurea 'Magnus' | 72-Cell Plug Tray | 12 | 31.00 | 372.00 |",
+  "| 04 | IG-D-05 | Ilex glabra 'Densa' | #5 Container | 40 | 24.00 | 960.00 |",
+  "| 05 | CS-G-01 | Calamagrostis x acutiflora 'Karl Foerster' | #1 Container | 80 | 6.50 | 520.00 |",
+  '',
+  'FINANCIAL SUMMARY',
+  ' * Subtotal: $4,909.50',
+  ' * TOTAL ORDER VALUE: $5,289.50',
+  '',
+  'Please send confirmation referencing PO-2026-08942 to orders@apexflorasourcing.com.'
 ].join('\n');
 
 /** Run from the editor and read the Logs (View -> Logs) to see the extraction. */
 function runParserSelfTest() {
-  var parsed = parsePurchaseOrder_(SAMPLE_PO, 'Your purchase order PO-10432');
+  var parsed = parsePurchaseOrder_(SAMPLE_PO, 'Your purchase order PO-2026-08942');
   Logger.log('Order number: %s', parsed.orderNumber);
   Logger.log('Supplier:     %s', parsed.supplier);
   Logger.log('Order date:   %s', parsed.orderDate);
   Logger.log('Line items:   %s', parsed.items.length);
   parsed.items.forEach(function (it, i) {
-    Logger.log('  %s. %s  x%s  @%s  = %s',
-      i + 1, it.itemName, it.units, it.unitCost, it.totalCost);
+    Logger.log('  %s. [%s] %s (%s)  x%s  @%s  = %s',
+      i + 1, it.sku, it.itemName, it.spec, it.units, it.unitCost, it.totalCost);
   });
-  if (parsed.items.length !== 3) {
-    throw new Error('Expected 3 line items from the sample, got ' + parsed.items.length +
-                    ' — adjust parseLineItem_ for your format.');
-  }
+
+  assert_(parsed.orderNumber === 'PO-2026-08942', 'order number, got ' + parsed.orderNumber);
+  assert_(parsed.items.length === 5, 'expected 5 items, got ' + parsed.items.length);
+  assert_(parsed.items[0].sku === 'AP-BL-03', 'SKU on item 1');
+  assert_(parsed.items[1].units === 120, 'units on item 2');
+  assert_(parsed.items[2].unitCost === 31, 'unit cost on item 3');
+  assert_(parsed.items[0].totalCost === 1347.5, 'line total on item 1');
+  Logger.log('runParserSelfTest: PASS');
   return parsed;
+}
+
+/** Proves the plain-text fallback still works for suppliers who don't use tables. */
+function runFallbackSelfTest() {
+  var body = [
+    'Purchase Order #: PO-10432',
+    'Supplier: Example Grower Co.',
+    "Echinacea 'Magnus'           200      1.85        370.00",
+    '300 x Salvia May Night @ $1.40 = $420.00'
+  ].join('\n');
+  var parsed = parsePurchaseOrder_(body, '');
+  assert_(parsed.orderNumber === 'PO-10432', 'fallback order number');
+  assert_(parsed.items.length === 2, 'fallback items, got ' + parsed.items.length);
+  Logger.log('runFallbackSelfTest: PASS');
+  return parsed;
+}
+
+function assert_(cond, msg) {
+  if (!cond) throw new Error('Self-test failed: ' + msg);
 }
