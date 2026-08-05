@@ -1056,7 +1056,9 @@
       }).join('');
 
     var extra = '';
-    if (r.photo) {
+    // Only ever link out to a real web address. A Photo cell edited by hand to a
+    // "javascript:" URL would otherwise become a one-tap script link.
+    if (r.photo && /^https?:\/\//i.test(r.photo)) {
       extra += '<a class="photo" href="' + esc(r.photo) + '" target="_blank" rel="noopener">View photo</a>';
     }
 

@@ -1431,6 +1431,21 @@ function getFormOptions() {
 }
 
 /**
+/**
+ * Keep a typed-in value from acting as a spreadsheet formula.
+ *
+ * A description of "=IMPORTDATA(...)" would run as a live formula the moment
+ * the owner opened the raw sheet — a way to pull other cells out to an outside
+ * URL. Leading a suspect value with an apostrophe forces the cell to stay text.
+ * The app itself already shows every value as escaped text, so this is only for
+ * the sheet; only strings are touched, so dates and numbers are untouched.
+ */
+function plainText_(value) {
+  if (typeof value !== 'string') return value;
+  return /^[=+\-@\t\r]/.test(value) ? "'" + value : value;
+}
+
+/**
  * Create a ticket from the app.
  *
  * Appends a row to the same sheet the form writes to, matching by header name
@@ -1490,7 +1505,7 @@ function createRequest(payload) {
   var put = function (question, value) {
     var header = headerFor_(headers, question);
     if (headers.indexOf(header) === -1) { missing.push('"' + header + '"'); return; }
-    values[header] = value;
+    values[header] = plainText_(value);
   };
   put(q.equipment, equipment);
   put(q.priority, priority);
@@ -1642,7 +1657,7 @@ function updateRequest(payload) {
     var row = resolveRow_(sheet, ticket, Number(payload && payload.row));
     if (!row) throw new Error('That request no longer exists. Pull down to refresh.');
     var previous = readCell_(sheet, row, STATUS_COL);
-    if (payload.notes !== undefined) writeCell_(sheet, row, NOTES_COL, String(payload.notes));
+    if (payload.notes !== undefined) writeCell_(sheet, row, NOTES_COL, plainText_(String(payload.notes)));
     writeCell_(sheet, row, STATUS_COL, status);
     return {
       row: row,
