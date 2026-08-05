@@ -103,10 +103,12 @@ var CONFIG = {
 var COLUMNS = [
   { header: 'Logged At',        key: '_loggedAt'   },
   { header: 'Order Number',     key: 'orderNumber' },
+  { header: 'Vendor SKU',       key: 'sku'         },
   { header: 'Plant / Item',     key: 'itemName'    },
+  { header: 'Spec / Size',      key: 'spec'        },
   { header: 'Units',            key: 'units'       },
   { header: 'Unit Cost',        key: 'unitCost'    },
-  { header: 'Total Cost',       key: 'totalCost'   },
+  { header: 'Line Total',       key: 'totalCost'   },
   { header: 'Supplier',         key: 'supplier'    },
   { header: 'Order Date',       key: 'orderDate'   },
   { header: 'From',             key: '_from'       },
@@ -399,27 +401,37 @@ function extractAddress_(fromHeader) {
 function parsePurchaseOrder_(body, subject) {
   var text = String(body || '');
   var subjectText = String(subject || '');
+  var lines = text.split(/\r?\n/);
 
   // --- A. Header fields -------------------------------------------------
+  // The order number MUST be preceded by an order/PO cue AND a ":" or "#", and
+  // MUST contain a digit. That rules out false hits like the heading "PURCHASE
+  // ORDER SUMMARY" or the phrase "purchase order on behalf of ...".
   var orderNumber =
-    firstMatch_(text, /\b(?:P\.?O\.?|purchase\s*order|order)\s*(?:number|no\.?|#)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i) ||
-    firstMatch_(subjectText, /\b(?:P\.?O\.?|order)\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i);
+    firstToken_(text, /\b(?:purchase\s*order|p\.?o\.?|order)\s*(?:number|no\.?|#)?\s*[:#]\s*([A-Za-z0-9][\w\-\/]{2,})/i) ||
+    firstToken_(subjectText, /\b(?:purchase\s*order|p\.?o\.?|order)\s*(?:number|no\.?|#)?\s*[:#]?\s*([A-Za-z0-9][\w\-\/]{2,})/i);
 
+  // "Supplier:" / "Vendor:" if present; otherwise "on behalf of <Company>".
+  // Leading bullets (*, -, •) are tolerated on labelled lines.
   var supplier =
-    firstMatch_(text, /^\s*(?:supplier|vendor|from|sold\s*by)\s*[:]\s*(.+?)\s*$/im);
+    firstMatch_(text, /^[\s*•\-]*(?:supplier|vendor|sold\s*by)\s*:\s*(.+?)\s*$/im) ||
+    firstMatch_(text, /on\s+behalf\s+of\s+(.+?)\s*[.,\n]/i);
 
   var orderDate =
-    firstMatch_(text, /^\s*(?:order\s*date|date|po\s*date)\s*[:]\s*(.+?)\s*$/im);
+    firstMatch_(text, /^[\s*•\-]*(?:order\s*date|po\s*date)\s*:\s*(.+?)\s*$/im) ||
+    firstMatch_(text, /^[\s*•\-]*date\s*:\s*(.+?)\s*$/im);
 
   // --- B. Line items ----------------------------------------------------
-  // A line item is any line ending in <units> <unit-cost> <total>, e.g.:
-  //   Echinacea 'Magnus'    200    1.85    370.00
-  //   200 x Rudbeckia Goldsturm @ $1.60 = $320.00
-  var items = [];
-  text.split(/\r?\n/).forEach(function (line) {
-    var item = parseLineItem_(line);
-    if (item) items.push(item);
-  });
+  // Preferred: a pipe-delimited table (Markdown / pasted spreadsheet), which is
+  // how most modern PO emails present their line items. Fall back to the
+  // one-line-per-item patterns for plain-text orders.
+  var items = parseTableItems_(lines);
+  if (!items.length) {
+    lines.forEach(function (line) {
+      var item = parseLineItem_(line);
+      if (item) items.push(item);
+    });
+  }
 
   return {
     orderNumber: orderNumber,
@@ -427,6 +439,118 @@ function parsePurchaseOrder_(body, subject) {
     orderDate: orderDate,
     items: items
   };
+}
+
+// ---------------------------------------------------------------------------
+// Pipe-table parser
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract line items from any pipe-delimited table whose header row names a
+ * quantity, a unit price and a line total. Other tables in the same email (a
+ * Ship-To / Bill-To block, say) have no such columns, so they are ignored.
+ *
+ * Columns are matched BY HEADER NAME, so suppliers can reorder or add columns
+ * without breaking anything — the SKU and container spec are captured too when
+ * the table offers them.
+ */
+function parseTableItems_(lines) {
+  var items = [];
+  var map = null;   // active column map, or null when we are not inside an items table
+
+  for (var i = 0; i < lines.length; i++) {
+    var cells = splitPipeRow_(lines[i]);
+
+    if (!cells) { map = null; continue; }   // a non-table line ends the table
+    if (isSeparatorRow_(cells)) continue;    // the |---|---| divider
+
+    if (!map) {
+      map = mapColumns_(cells);              // is THIS an items header? (null if not)
+      continue;                              // header row itself carries no data
+    }
+
+    var item = rowToItem_(cells, map);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+/**
+ * Split a "| a | b | c |" row into trimmed cell values, dropping the empty
+ * cells the outer pipes create. Returns null for any line that is not a table
+ * row (fewer than two pipes), which is how the parser knows a table has ended.
+ */
+function splitPipeRow_(line) {
+  var s = String(line || '');
+  if ((s.match(/\|/g) || []).length < 2) return null;
+
+  var cells = s.split('|').map(function (c) { return c.trim(); });
+  if (cells.length && cells[0] === '') cells.shift();
+  if (cells.length && cells[cells.length - 1] === '') cells.pop();
+  return cells.length ? cells : null;
+}
+
+/** True for a Markdown divider row like |---|:--:|---| . */
+function isSeparatorRow_(cells) {
+  return cells.every(function (c) { return /^:?-{2,}:?$/.test(c) || c === ''; }) &&
+         cells.some(function (c) { return /-/.test(c); });
+}
+
+/**
+ * If these header cells describe a line-item table, return a map of the
+ * columns we care about; otherwise null. Requires at least a quantity column
+ * plus a unit price or a line total — enough to tell an order table apart from
+ * an address table.
+ */
+function mapColumns_(headerCells) {
+  var qty   = findHeader_(headerCells, /\bqty\b|quantit|\bunits?\b|\bcount\b/i);
+  var unit  = findHeader_(headerCells, /unit\s*(?:price|cost)|price\s*each|\beach\b|price\s*\(/i);
+  var total = findHeader_(headerCells, /line\s*(?:total|amount)|ext(?:ended)?\s*(?:price|cost)|\bamount\b|\btotal\b/i);
+  if (qty === -1 || (unit === -1 && total === -1)) return null;
+
+  var name = findHeader_(headerCells, /botanical|common|description|product|plant/i);
+  if (name === -1) name = findHeader_(headerCells, /\bname\b/i);
+  if (name === -1) name = findHeader_(headerCells, /\bitem\b(?!\s*#)/i);
+
+  // Prefer a real product code column; only fall back to a line-number ("Item #")
+  // column if there is no dedicated SKU/part-number column.
+  var sku = findHeader_(headerCells, /\bsku\b|part\s*(?:#|no)|\bmpn\b|\bupc\b|item\s*code|\bcode\b/i);
+  if (sku === -1) sku = findHeader_(headerCells, /item\s*#|item\s*no|line\s*#/i);
+
+  return {
+    name:  name,
+    qty:   qty,
+    unit:  unit,
+    total: total,
+    sku:   sku,
+    spec:  findHeader_(headerCells, /spec|container|\bsize\b|grade|form/i)
+  };
+}
+
+/** Index of the first header cell matching re, or -1. */
+function findHeader_(cells, re) {
+  for (var i = 0; i < cells.length; i++) {
+    if (re.test(cells[i])) return i;
+  }
+  return -1;
+}
+
+/** Turn one data row into a line item using the column map, or null. */
+function rowToItem_(cells, map) {
+  var at = function (idx) { return idx >= 0 && idx < cells.length ? cells[idx] : ''; };
+
+  var units = toNumber_(at(map.qty));
+  var item = finishItem_(at(map.name), units, toNumber_(at(map.unit)), toNumber_(at(map.total)));
+  if (!item) return null;
+
+  item.sku = plainish_(at(map.sku));
+  item.spec = plainish_(at(map.spec));
+  return item;
+}
+
+/** Trim and collapse internal whitespace; used for free-text cells. */
+function plainish_(value) {
+  return String(value || '').replace(/\s{2,}/g, ' ').trim();
 }
 
 /**
@@ -496,7 +620,9 @@ function buildRow_(item, order, msg) {
   var value = {
     _loggedAt: loggedAt,
     orderNumber: order.orderNumber || '',
+    sku: item.sku || '',
     itemName: item.itemName || '',
+    spec: item.spec || '',
     units: numberOrText_(item.units),
     unitCost: numberOrText_(item.unitCost),
     totalCost: numberOrText_(item.totalCost),
@@ -659,6 +785,23 @@ function firstMatch_(text, re) {
   return m && m[1] ? m[1].trim() : '';
 }
 
+/**
+ * First captured token that contains a digit, or '' . Used for the order
+ * number so a text-only match (a heading, a stray "purchase order" in prose)
+ * is skipped in favour of something that actually looks like an order id.
+ */
+function firstToken_(text, re) {
+  var flags = re.flags.indexOf('g') === -1 ? re.flags + 'g' : re.flags;
+  var re2 = new RegExp(re.source, flags);
+  var m;
+  while ((m = re2.exec(String(text || ''))) !== null) {
+    var val = (m[1] || '').trim();
+    if (/\d/.test(val)) return val;
+    if (m.index === re2.lastIndex) re2.lastIndex++;   // guard against zero-width loops
+  }
+  return '';
+}
+
 /** Parse "$1,234.50" / "1,234.5" / "200" to a Number, or NaN. */
 function toNumber_(s) {
   if (typeof s === 'number') return s;
@@ -691,35 +834,79 @@ function reportError_(err) {
 // SELF-TEST — prove the parser works before you wire up real mail.
 // ===========================================================================
 
-// A sanitised sample PO. Replace this with a real (scrubbed) email body to
-// tune parsePurchaseOrder_() to your suppliers, then run runParserSelfTest().
+// A sanitised sample PO in the pipe-table format most suppliers send. Replace
+// this with a real (scrubbed) email body to tune the parser to a new supplier,
+// then run runParserSelfTest(). The plain-text fallback patterns are covered by
+// runFallbackSelfTest() below.
 var SAMPLE_PO = [
-  'Purchase Order #: PO-10432',
-  'Supplier: Example Grower Co.',
-  'Order Date: 2026-08-01',
+  'Dear Oakridge Wholesale Team,',
+  'Please accept the following purchase order on behalf of Apex Flora Sourcing Co.',
   '',
-  'Item                         Units    Unit Cost   Total',
-  "Echinacea 'Magnus'           200      1.85        370.00",
-  "Rudbeckia 'Goldsturm'        150      1.60        240.00",
-  '300 x Salvia May Night @ $1.40 = $420.00',
+  'PURCHASE ORDER SUMMARY',
+  ' * Purchase Order Number: PO-2026-08942',
+  ' * Order Date: August 5, 2026',
+  ' * Requested Ship Date: August 11, 2026',
+  ' * Payment Terms: Net 30 (Per Master Vendor Agreement #AV-402)',
   '',
-  'Order Total: 1030.00'
+  'DELIVERY & BILLING INFORMATION',
+  '| Ship To (Delivery Address) | Bill To (Invoicing Address) |',
+  '|---|---|',
+  '| Apex Flora Receiving Hub — Dock B | Apex Flora Sourcing Co. |',
+  '| 1420 Nursery Way, Building 4 | P.O. Box 88102 |',
+  '',
+  'ORDER SPECIFICATIONS',
+  '| Item # | Vendor SKU | Botanical / Common Name | Spec / Container Size | Qty | Unit Price ($) | Line Total ($) |',
+  '|---|---|---|---|---|---|---|',
+  "| 01 | AP-BL-03 | Acer palmatum 'Bloodgood' | #3 Container (Heavy) | 35 | 38.50 | 1,347.50 |",
+  "| 02 | BM-WG-02 | Buxus microphylla 'Winter Gem' | #2 Container | 120 | 14.25 | 1,710.00 |",
+  "| 03 | EP-M-72P | Echinacea purpurea 'Magnus' | 72-Cell Plug Tray | 12 | 31.00 | 372.00 |",
+  "| 04 | IG-D-05 | Ilex glabra 'Densa' | #5 Container | 40 | 24.00 | 960.00 |",
+  "| 05 | CS-G-01 | Calamagrostis x acutiflora 'Karl Foerster' | #1 Container | 80 | 6.50 | 520.00 |",
+  '',
+  'FINANCIAL SUMMARY',
+  ' * Subtotal: $4,909.50',
+  ' * TOTAL ORDER VALUE: $5,289.50',
+  '',
+  'Please send confirmation referencing PO-2026-08942 to orders@apexflorasourcing.com.'
 ].join('\n');
 
 /** Run from the editor and read the Logs (View -> Logs) to see the extraction. */
 function runParserSelfTest() {
-  var parsed = parsePurchaseOrder_(SAMPLE_PO, 'Your purchase order PO-10432');
+  var parsed = parsePurchaseOrder_(SAMPLE_PO, 'Your purchase order PO-2026-08942');
   Logger.log('Order number: %s', parsed.orderNumber);
   Logger.log('Supplier:     %s', parsed.supplier);
   Logger.log('Order date:   %s', parsed.orderDate);
   Logger.log('Line items:   %s', parsed.items.length);
   parsed.items.forEach(function (it, i) {
-    Logger.log('  %s. %s  x%s  @%s  = %s',
-      i + 1, it.itemName, it.units, it.unitCost, it.totalCost);
+    Logger.log('  %s. [%s] %s (%s)  x%s  @%s  = %s',
+      i + 1, it.sku, it.itemName, it.spec, it.units, it.unitCost, it.totalCost);
   });
-  if (parsed.items.length !== 3) {
-    throw new Error('Expected 3 line items from the sample, got ' + parsed.items.length +
-                    ' — adjust parseLineItem_ for your format.');
-  }
+
+  assert_(parsed.orderNumber === 'PO-2026-08942', 'order number, got ' + parsed.orderNumber);
+  assert_(parsed.items.length === 5, 'expected 5 items, got ' + parsed.items.length);
+  assert_(parsed.items[0].sku === 'AP-BL-03', 'SKU on item 1');
+  assert_(parsed.items[1].units === 120, 'units on item 2');
+  assert_(parsed.items[2].unitCost === 31, 'unit cost on item 3');
+  assert_(parsed.items[0].totalCost === 1347.5, 'line total on item 1');
+  Logger.log('runParserSelfTest: PASS');
   return parsed;
+}
+
+/** Proves the plain-text fallback still works for suppliers who don't use tables. */
+function runFallbackSelfTest() {
+  var body = [
+    'Purchase Order #: PO-10432',
+    'Supplier: Example Grower Co.',
+    "Echinacea 'Magnus'           200      1.85        370.00",
+    '300 x Salvia May Night @ $1.40 = $420.00'
+  ].join('\n');
+  var parsed = parsePurchaseOrder_(body, '');
+  assert_(parsed.orderNumber === 'PO-10432', 'fallback order number');
+  assert_(parsed.items.length === 2, 'fallback items, got ' + parsed.items.length);
+  Logger.log('runFallbackSelfTest: PASS');
+  return parsed;
+}
+
+function assert_(cond, msg) {
+  if (!cond) throw new Error('Self-test failed: ' + msg);
 }

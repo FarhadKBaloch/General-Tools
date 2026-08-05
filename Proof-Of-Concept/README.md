@@ -136,9 +136,23 @@ sensible generic patterns and a built-in test. To tune it:
 3. Adjust the regexes in `parseLineItem_()` / `parsePurchaseOrder_()` until the
    log matches the email. The comments explain each pattern.
 
-Out of the box it already handles two common layouts:
-- table rows — `Echinacea 'Magnus'   200   1.85   370.00`, and
-- inline lines — `300 x Salvia May Night @ $1.40 = $420.00`.
+Out of the box it already handles the common layouts:
+- **pipe / Markdown tables** (how most PO emails present line items) —
+  `| SKU | Botanical Name | Spec | Qty | Unit Price | Line Total |`. Columns are
+  matched **by header name**, so a supplier can reorder or add columns without
+  breaking anything, and the Vendor SKU and container spec are captured too.
+  Non-item tables in the same email (a Ship-To / Bill-To block) are ignored
+  because they have no quantity or price columns.
+- **whitespace tables** — `Echinacea 'Magnus'   200   1.85   370.00`, and
+- **inline lines** — `300 x Salvia May Night @ $1.40 = $420.00`.
+
+The order number is only accepted when it follows an order/PO cue **and** a
+`:` or `#` **and** contains a digit — so a heading like "PURCHASE ORDER SUMMARY"
+or the phrase "purchase order on behalf of…" is never mistaken for one.
+
+Two self-tests ship with the script: `runParserSelfTest` (pipe-table format)
+and `runFallbackSelfTest` (plain-text supplier). Run either from the editor and
+read **View → Logs**.
 
 ### 6. (Optional) Publish the dashboard
 **Deploy → New deployment → Web app.** Set **Execute as: Me** and **Who has
