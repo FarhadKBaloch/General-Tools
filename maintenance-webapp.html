@@ -95,10 +95,18 @@
     #view.enter        { animation: viewEnter .18s ease-out both; }
     .formcard.sheet-in { animation: sheetIn .22s cubic-bezier(.2,.75,.35,1) both; }
     .formcard.sheet-out { animation: sheetOut .16s ease-in both; }
+    /* Tapping "UPDATE +/-": the row dips under the thumb, the marker pops as it
+       flips, and the Status/Notes panel slides in. */
+    .card summary { transition: transform .1s ease; }
+    .card summary:active { transform: scale(.985); }
+    .card details[open] summary::after { animation: markerPop .2s ease-out; }
+    .card details[open] > :not(summary) { animation: revealIn .18s ease-out both; }
   }
   @keyframes viewEnter { from { opacity: 0; transform: translateY(6px);  } to { opacity: 1; transform: none; } }
   @keyframes sheetIn   { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
   @keyframes sheetOut  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(12px); } }
+  @keyframes markerPop { from { opacity: .3; transform: scale(.5); } to { opacity: 1; transform: none; } }
+  @keyframes revealIn  { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
   #subbar:empty { display: none; }
 
@@ -229,8 +237,8 @@
     list-style: none; text-transform: uppercase; letter-spacing: .06em;
   }
   .card summary::-webkit-details-marker { display: none; }
-  .card summary::after { content: " +"; }
-  .card details[open] summary::after { content: " −"; }
+  .card summary::after { content: "+"; display: inline-block; margin-left: 5px; }
+  .card details[open] summary::after { content: "−"; }
 
   label.field { display: block; font-size: 11px; font-weight: 700; margin: 14px 0 5px;
     text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
