@@ -1,0 +1,52 @@
+{
+  "timeZone": "America/New_York",
+  "runtimeVersion": "V8",
+  "exceptionLogging": "STACKDRIVER",
+
+  "//": [
+    "Least-privilege manifest for the Purchase Order Reader.",
+    "",
+    "These scopes are declared EXPLICITLY so the Google consent screen shows",
+    "exactly what the app can do — and, just as importantly, what it CANNOT do.",
+    "Every scope below is the narrowest one that still lets the feature work.",
+    "",
+    "  gmail.readonly              Read messages only. The app physically cannot",
+    "                              send, delete, forward, or alter your mail. If",
+    "                              this script were ever compromised, the worst it",
+    "                              could do to Gmail is read the purchase-order",
+    "                              inbox it is already allowed to read.",
+    "  spreadsheets.currentonly    Write to ONLY the one spreadsheet this script",
+    "                              is bound to. It cannot open, read, or write any",
+    "                              other sheet in the shared Drive.",
+    "  script.scriptapp            Create the single time-based trigger.",
+    "  userinfo.email              Read the signed-in viewer's address so the web",
+    "                              dashboard can lock itself to @millcreekplants.com.",
+    "",
+    "The Gmail advanced service (below) is what makes gmail.readonly possible.",
+    "The convenience GmailApp class would force the far broader",
+    "https://mail.google.com/ scope (full send + delete). We use the REST Gmail",
+    "service instead precisely to keep mail access read-only."
+  ],
+
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/spreadsheets.currentonly",
+    "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/userinfo.email"
+  ],
+
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Gmail",
+        "serviceId": "gmail",
+        "version": "v1"
+      }
+    ]
+  },
+
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "DOMAIN"
+  }
+}

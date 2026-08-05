@@ -1,0 +1,725 @@
+/**
+ * purchase-order-reader.gs — Purchase Order Reader (proof of concept)
+ *
+ * Reads incoming purchase-order emails on a schedule, pulls out the order
+ * number, plant name, unit count, unit cost and total cost, and appends one
+ * row per line item to a Google Sheet in the shared Drive.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS DESIGN — security is the priority
+ * ---------------------------------------------------------------------------
+ * This runs as Google Apps Script BOUND to the destination spreadsheet. That
+ * choice is the security story, not an implementation detail:
+ *
+ *   1. No server, ever.  The code runs on Google's own infrastructure, invoked
+ *      by a time trigger. There is no machine to patch, no port to expose, no
+ *      web host that can be breached, and nothing running while the trigger is
+ *      idle.
+ *
+ *   2. No credentials to leak.  There is no API key, no password, no OAuth
+ *      refresh token stored anywhere in this file or in the project. Access is
+ *      the signed-in owner's own Google identity, granted through Google's
+ *      consent screen. Nothing sensitive is committed to GitHub.
+ *
+ *   3. Data never leaves your Workspace.  Mail is read from Millcreek's Gmail
+ *      and written to Millcreek's Sheet. This script makes no outbound network
+ *      calls to any third party — there is no other place the data could go.
+ *
+ *   4. Read-only mail.  Via the Gmail *advanced service* the app holds only the
+ *      gmail.readonly scope (see appsscript.json). It cannot send, delete, or
+ *      alter a single message. The blast radius of a bug is "read the PO inbox".
+ *
+ *   5. Least privilege everywhere else.  It can write to ONLY this one bound
+ *      spreadsheet (spreadsheets.currentonly), and the dashboard is locked to
+ *      @millcreekplants.com accounts.
+ *
+ *   6. Trust the sender, not the text.  Only mail from an explicit allowlist of
+ *      senders is parsed, and every value written to the sheet is neutralised so
+ *      a malicious email body can never execute as a spreadsheet formula.
+ *
+ * ---------------------------------------------------------------------------
+ * SETUP (about ten minutes) — full walkthrough in README.md
+ * ---------------------------------------------------------------------------
+ *   1. Open the destination Google Sheet -> Extensions -> Apps Script.
+ *   2. Paste this file, purchase-order-webapp.html, and appsscript.json in.
+ *      (Show appsscript.json via the gear -> "Show manifest file".)
+ *   3. Edit the CONFIG block below — at minimum, poSenders.
+ *   4. Run setUp() once and grant the permissions it asks for.
+ *   5. (Optional) Deploy -> New deployment -> Web app for the dashboard.
+ *
+ * Everything you need to change lives in CONFIG. Nothing below it should need
+ * editing except parsePurchaseOrder_(), which you tune to your real emails.
+ */
+
+// ===========================================================================
+// CONFIG — the only section you need to edit.
+// ===========================================================================
+var CONFIG = {
+
+  // --- Who is allowed to send a purchase order --------------------------
+  // ONLY mail from these addresses (or domains) is ever parsed. This is the
+  // primary trust boundary: an attacker cannot get a row onto the sheet just
+  // by emailing the inbox — the mail has to come from a sender you listed.
+  //
+  // Use full addresses ('orders@a-grower.com') for tight control, or a bare
+  // domain ('a-grower.com') to trust everyone at a supplier. Keep it short.
+  poSenders: [
+    'orders@example-supplier.com'
+    // 'sales@another-grower.com',
+    // 'a-trusted-supplier.com'
+  ],
+
+  // --- How we find the emails -------------------------------------------
+  // A Gmail search string. The sender filter above is applied on top of this
+  // in code, so this only needs to narrow things down. Newer-than keeps each
+  // run fast. Adjust the subject words to match your suppliers.
+  //   https://support.google.com/mail/answer/7190
+  searchQuery: 'newer_than:14d (subject:"purchase order" OR subject:"PO" OR subject:"order confirmation")',
+
+  // --- Where the data goes ----------------------------------------------
+  // The tab within THIS spreadsheet that rows are appended to. Created by
+  // setUp() if it does not exist.
+  sheetName: 'Purchase Orders',
+
+  // --- The company domain -----------------------------------------------
+  // Used to lock the web dashboard to Millcreek staff. Sign-ins from any other
+  // domain are refused.
+  workEmailDomain: 'millcreekplants.com',
+
+  // --- Housekeeping ------------------------------------------------------
+  // How many message threads to examine per run. A ceiling so a backlog can
+  // never make one run hang; leftovers are picked up next run.
+  maxThreadsPerRun: 25,
+
+  // Notify these addresses if a run hits an error (leave [] for none). Uses
+  // no extra scope — this is the owner's own Apps Script quota mail, not the
+  // read-only Gmail service.
+  alertOnErrorTo: []
+};
+
+// Column order for the sheet. Header text is what a person reads; `key` is what
+// parsePurchaseOrder_() must return for each line item. Add or reorder freely —
+// the writer matches by header, never by position.
+var COLUMNS = [
+  { header: 'Logged At',        key: '_loggedAt'   },
+  { header: 'Order Number',     key: 'orderNumber' },
+  { header: 'Plant / Item',     key: 'itemName'    },
+  { header: 'Units',            key: 'units'       },
+  { header: 'Unit Cost',        key: 'unitCost'    },
+  { header: 'Total Cost',       key: 'totalCost'   },
+  { header: 'Supplier',         key: 'supplier'    },
+  { header: 'Order Date',       key: 'orderDate'   },
+  { header: 'From',             key: '_from'       },
+  { header: 'Email Subject',    key: '_subject'    },
+  { header: 'Gmail Link',       key: '_gmailLink'  }
+];
+
+var PROP_KEY_WATERMARK = 'po_reader_last_ts';   // high-water mark (ms since epoch)
+
+// ===========================================================================
+// SETUP
+// ===========================================================================
+
+/**
+ * Run this once, by hand, from the Apps Script editor.
+ *
+ * Creates the destination tab with headers, installs a single time-based
+ * trigger, and — critically — makes you approve the permission scopes so you
+ * can read on the consent screen exactly what the app may touch.
+ */
+function setUp() {
+  ensureSheet_();
+  ensureTrigger_();
+
+  // Seed the watermark to "now" so the very first scheduled run does not walk
+  // the entire mailbox history. Comment this out for a one-time backfill.
+  if (!PropertiesService.getScriptProperties().getProperty(PROP_KEY_WATERMARK)) {
+    PropertiesService.getScriptProperties()
+      .setProperty(PROP_KEY_WATERMARK, String(Date.now()));
+  }
+
+  SpreadsheetApp.getActive().toast(
+    'Purchase Order Reader is set up. It will check for new orders every 15 minutes.',
+    'Ready', 8);
+}
+
+/** Create (or update the header of) the destination tab. */
+function ensureSheet_() {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(CONFIG.sheetName) || ss.insertSheet(CONFIG.sheetName);
+
+  var headers = COLUMNS.map(function (c) { return c.header; });
+  sheet.getRange(1, 1, 1, headers.length)
+    .setValues([headers])
+    .setFontWeight('bold')
+    .setBackground('#e8efe9');
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, headers.length);
+  return sheet;
+}
+
+/** Install exactly one 15-minute trigger; never stack duplicates. */
+function ensureTrigger_() {
+  var handler = 'processPurchaseOrders';
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === handler) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger(handler).timeBased().everyMinutes(15).create();
+}
+
+// ===========================================================================
+// MAIN — this is what the trigger calls.
+// ===========================================================================
+
+/**
+ * Find new purchase-order emails, parse them, and append their line items.
+ *
+ * Idempotent by two independent guards, so re-running never double-writes:
+ *   - a timestamp watermark, so already-seen messages are skipped, and
+ *   - an order-number set read from the sheet, so a resend of the same PO is
+ *     ignored even if the watermark is reset.
+ */
+function processPurchaseOrders() {
+  try {
+    var sheet = ensureSheet_();
+    var props = PropertiesService.getScriptProperties();
+    var watermark = Number(props.getProperty(PROP_KEY_WATERMARK) || 0);
+    var seenOrders = existingOrderNumbers_(sheet);
+
+    var senders = normaliseSenders_(CONFIG.poSenders);
+    if (!senders.length) {
+      Logger.log('No poSenders configured — nothing is trusted, so nothing runs.');
+      return;
+    }
+
+    var messages = findCandidateMessages_(CONFIG.searchQuery, CONFIG.maxThreadsPerRun);
+    var newWatermark = watermark;
+    var rowsToAppend = [];
+
+    messages.forEach(function (msg) {
+      if (msg.internalMs <= watermark) return;            // already past this point
+      newWatermark = Math.max(newWatermark, msg.internalMs);
+
+      if (!senderAllowed_(msg.from, senders)) return;     // untrusted sender: ignore
+
+      var parsed = parsePurchaseOrder_(msg.body, msg.subject) || {};
+      var order = String(parsed.orderNumber || '').trim();
+      if (!order) return;                                 // couldn't identify the PO
+      if (seenOrders[order.toLowerCase()]) return;        // already logged this PO
+      seenOrders[order.toLowerCase()] = true;
+
+      var items = Array.isArray(parsed.items) && parsed.items.length
+        ? parsed.items
+        : [parsed];                                       // single-item fallback
+
+      items.forEach(function (item) {
+        rowsToAppend.push(buildRow_(item, parsed, msg));
+      });
+    });
+
+    if (rowsToAppend.length) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, COLUMNS.length)
+        .setValues(rowsToAppend);
+    }
+
+    if (newWatermark > watermark) {
+      props.setProperty(PROP_KEY_WATERMARK, String(newWatermark));
+    }
+    Logger.log('Purchase Order Reader: appended %s row(s).', rowsToAppend.length);
+  } catch (err) {
+    reportError_(err);
+    throw err;   // still surface it in the Apps Script execution log
+  }
+}
+
+// ===========================================================================
+// GMAIL — read-only, via the advanced Gmail service.
+// ===========================================================================
+
+/**
+ * Return lightweight, already-decoded records for messages matching the query,
+ * newest first. Using the REST Gmail service (not GmailApp) is what lets the
+ * whole project stay on the gmail.readonly scope.
+ */
+function findCandidateMessages_(query, maxThreads) {
+  var out = [];
+  var list = Gmail.Users.Messages.list('me', {
+    q: query,
+    maxResults: Math.max(1, Math.min(maxThreads, 100))
+  });
+  var ids = (list && list.messages) || [];
+
+  ids.forEach(function (ref) {
+    var full = Gmail.Users.Messages.get('me', ref.id, { format: 'full' });
+    if (!full) return;
+    out.push({
+      id: ref.id,
+      threadId: full.threadId,
+      internalMs: Number(full.internalDate || 0),
+      from: headerValue_(full, 'From'),
+      subject: headerValue_(full, 'Subject'),
+      body: extractPlainText_(full.payload),
+      gmailLink: 'https://mail.google.com/mail/u/0/#all/' + (full.threadId || ref.id)
+    });
+  });
+
+  // Newest first so the watermark advances monotonically.
+  out.sort(function (a, b) { return b.internalMs - a.internalMs; });
+  return out;
+}
+
+/** Pull a header value (case-insensitive) from a Gmail message resource. */
+function headerValue_(message, name) {
+  var headers = (message.payload && message.payload.headers) || [];
+  var wanted = String(name).toLowerCase();
+  for (var i = 0; i < headers.length; i++) {
+    if (String(headers[i].name).toLowerCase() === wanted) return headers[i].value || '';
+  }
+  return '';
+}
+
+/**
+ * Walk a MIME payload and return the plain-text body.
+ *
+ * Prefers text/plain. Falls back to a crude tag-strip of text/html so a
+ * plain-text-free email still yields something to parse. Recurses through
+ * multipart containers.
+ */
+function extractPlainText_(payload) {
+  if (!payload) return '';
+
+  var plain = collectMimeText_(payload, 'text/plain');
+  if (plain) return plain;
+
+  var html = collectMimeText_(payload, 'text/html');
+  if (html) {
+    return html
+      .replace(/<\s*(br|\/p|\/div|\/tr|\/li)\s*>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>');
+  }
+  return '';
+}
+
+/** Concatenate the decoded body of every part whose mimeType matches. */
+function collectMimeText_(part, mimeType) {
+  var acc = [];
+  (function walk(p) {
+    if (!p) return;
+    if (p.mimeType === mimeType && p.body && p.body.data) {
+      acc.push(decodeBase64Url_(p.body.data));
+    }
+    (p.parts || []).forEach(walk);
+  })(part);
+  return acc.join('\n');
+}
+
+/** Decode Gmail's base64url message bodies to a UTF-8 string. */
+function decodeBase64Url_(data) {
+  try {
+    var bytes = Utilities.base64DecodeWebSafe(data);
+    return Utilities.newBlob(bytes).getDataAsString('UTF-8');
+  } catch (err) {
+    return '';
+  }
+}
+
+// ===========================================================================
+// SENDER TRUST
+// ===========================================================================
+
+/** Lower-case, de-blank the configured sender allowlist. */
+function normaliseSenders_(list) {
+  return (list || [])
+    .map(function (s) { return String(s || '').trim().toLowerCase(); })
+    .filter(function (s) { return s.length > 0; });
+}
+
+/**
+ * Is this From header on the allowlist?
+ *
+ * Matches a full address exactly, or a bare-domain entry against the address's
+ * domain. The address is pulled out of "Name <addr@x>" first so display-name
+ * spoofing ("orders@example-supplier.com" as a *name*) cannot slip through.
+ */
+function senderAllowed_(fromHeader, senders) {
+  var addr = extractAddress_(fromHeader);
+  if (!addr) return false;
+  var domain = addr.slice(addr.indexOf('@') + 1);
+  for (var i = 0; i < senders.length; i++) {
+    var entry = senders[i];
+    if (entry.indexOf('@') === -1) {
+      if (domain === entry) return true;        // bare-domain rule
+    } else if (addr === entry) {
+      return true;                              // exact-address rule
+    }
+  }
+  return false;
+}
+
+/** Extract the bare email address from a From header, lower-cased. */
+function extractAddress_(fromHeader) {
+  var s = String(fromHeader || '');
+  var m = s.match(/<([^>]+)>/);
+  var addr = (m ? m[1] : s).trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr) ? addr : '';
+}
+
+// ===========================================================================
+// PARSER — tune this to your real purchase-order emails.
+// ===========================================================================
+
+/**
+ * Turn one email body into a purchase order: header fields plus line items.
+ *
+ * Returns an object shaped like:
+ *   {
+ *     orderNumber: 'PO-10432',
+ *     supplier:    'Example Supplier',
+ *     orderDate:   '2026-08-01',
+ *     items: [
+ *       { itemName: 'Echinacea Magnus', units: 200, unitCost: 1.85, totalCost: 370 },
+ *       ...
+ *     ]
+ *   }
+ *
+ * The two blocks below are deliberately generic so the PoC works on day one:
+ *   A. header fields are read from "Label: value" lines, and
+ *   B. line items are read from rows that end in three numbers
+ *      (units, unit cost, total), which is how most PO tables flatten to text.
+ *
+ * Every real supplier formats POs differently. Treat this as the ONE function
+ * you adapt: run runParserSelfTest() and paste a real (sanitised) email into
+ * the SAMPLE_PO string at the bottom to see what it extracts, then adjust the
+ * patterns. Nothing else in the file should need to change.
+ */
+function parsePurchaseOrder_(body, subject) {
+  var text = String(body || '');
+  var subjectText = String(subject || '');
+
+  // --- A. Header fields -------------------------------------------------
+  var orderNumber =
+    firstMatch_(text, /\b(?:P\.?O\.?|purchase\s*order|order)\s*(?:number|no\.?|#)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i) ||
+    firstMatch_(subjectText, /\b(?:P\.?O\.?|order)\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i);
+
+  var supplier =
+    firstMatch_(text, /^\s*(?:supplier|vendor|from|sold\s*by)\s*[:]\s*(.+?)\s*$/im);
+
+  var orderDate =
+    firstMatch_(text, /^\s*(?:order\s*date|date|po\s*date)\s*[:]\s*(.+?)\s*$/im);
+
+  // --- B. Line items ----------------------------------------------------
+  // A line item is any line ending in <units> <unit-cost> <total>, e.g.:
+  //   Echinacea 'Magnus'    200    1.85    370.00
+  //   200 x Rudbeckia Goldsturm @ $1.60 = $320.00
+  var items = [];
+  text.split(/\r?\n/).forEach(function (line) {
+    var item = parseLineItem_(line);
+    if (item) items.push(item);
+  });
+
+  return {
+    orderNumber: orderNumber,
+    supplier: supplier,
+    orderDate: orderDate,
+    items: items
+  };
+}
+
+/**
+ * Parse a single line into {itemName, units, unitCost, totalCost} or null.
+ * Tolerant of $ signs, commas in thousands, "x"/"@"/"=" separators, and
+ * trailing/leading whitespace.
+ */
+function parseLineItem_(line) {
+  var raw = String(line || '').trim();
+  if (!raw) return null;
+
+  // Pattern 1: "200 x Name @ $1.60 = $320.00"
+  var m = raw.match(
+    /^(\d[\d,]*)\s*[xX*]\s*(.+?)\s*[@]\s*\$?\s*([\d,]+(?:\.\d+)?)\s*(?:[=]\s*\$?\s*([\d,]+(?:\.\d+)?))?$/);
+  if (m) {
+    var units1 = toNumber_(m[1]);
+    var unit1 = toNumber_(m[3]);
+    var total1 = m[4] ? toNumber_(m[4]) : round2_(units1 * unit1);
+    return finishItem_(m[2], units1, unit1, total1);
+  }
+
+  // Pattern 2: "Name .... <units> <unitCost> <total>" (whitespace/table columns)
+  m = raw.match(
+    /^(.+?)\s{2,}(\d[\d,]*)\s+\$?([\d,]+(?:\.\d+)?)\s+\$?([\d,]+(?:\.\d+)?)\s*$/);
+  if (!m) {
+    m = raw.match(
+      /^(.+?)\s+(\d[\d,]*)\s+\$?([\d,]+(?:\.\d+)?)\s+\$?([\d,]+(?:\.\d+)?)\s*$/);
+  }
+  if (m) {
+    var name2 = m[1];
+    // Guard against matching a label line like "Order Total: 1 2 3".
+    if (/order|total|subtotal|invoice|tax|shipping/i.test(name2) &&
+        !/[a-z]{3,}/i.test(name2.replace(/order|total|subtotal|invoice|tax|shipping/ig, ''))) {
+      return null;
+    }
+    return finishItem_(name2, toNumber_(m[2]), toNumber_(m[3]), toNumber_(m[4]));
+  }
+
+  return null;
+}
+
+/** Assemble a clean line-item object, dropping obviously empty rows. */
+function finishItem_(name, units, unitCost, totalCost) {
+  var itemName = String(name || '').replace(/\s{2,}/g, ' ').trim();
+  if (!itemName || !(units > 0)) return null;
+  return {
+    itemName: itemName,
+    units: units,
+    unitCost: unitCost,
+    totalCost: totalCost
+  };
+}
+
+// ===========================================================================
+// SHEET WRITING — injection-hardened.
+// ===========================================================================
+
+/**
+ * Build one sheet row (array in COLUMNS order) from a line item, its parent
+ * order, and the source message. Header fields fall back to the order-level
+ * value; every text value is neutralised against formula injection.
+ */
+function buildRow_(item, order, msg) {
+  var loggedAt = Utilities.formatDate(new Date(), Session.getScriptTimeZone(),
+    'yyyy-MM-dd HH:mm');
+
+  var value = {
+    _loggedAt: loggedAt,
+    orderNumber: order.orderNumber || '',
+    itemName: item.itemName || '',
+    units: numberOrText_(item.units),
+    unitCost: numberOrText_(item.unitCost),
+    totalCost: numberOrText_(item.totalCost),
+    supplier: order.supplier || extractAddress_(msg.from) || '',
+    orderDate: order.orderDate || '',
+    _from: msg.from || '',
+    _subject: msg.subject || '',
+    _gmailLink: msg.gmailLink || ''
+  };
+
+  return COLUMNS.map(function (col) { return plainText_(value[col.key]); });
+}
+
+/**
+ * Keep an email-supplied value from acting as a spreadsheet formula.
+ *
+ * A cell beginning with = + - @ (or a tab/CR) is evaluated as a formula when
+ * the sheet opens; a crafted PO could use =IMPORTDATA(...) to exfiltrate other
+ * cells to an outside URL. Prefixing a suspect string with an apostrophe forces
+ * it to stay literal text. Numbers and dates are left untouched so totals still
+ * add up.
+ */
+function plainText_(value) {
+  if (typeof value !== 'string') return value;
+  return /^[=+\-@\t\r]/.test(value) ? "'" + value : value;
+}
+
+/** Pass real numbers through as numbers; leave anything else as its string. */
+function numberOrText_(value) {
+  return (typeof value === 'number' && isFinite(value)) ? value : String(value || '');
+}
+
+/** Set of order numbers already in the sheet (lower-cased), for dedupe. */
+function existingOrderNumbers_(sheet) {
+  var seen = {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return seen;
+
+  var col = 0;
+  for (var i = 0; i < COLUMNS.length; i++) {
+    if (COLUMNS[i].key === 'orderNumber') { col = i + 1; break; }
+  }
+  if (!col) return seen;
+
+  var values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+  values.forEach(function (r) {
+    var v = String(r[0] || '').trim().toLowerCase();
+    if (v) seen[v] = true;
+  });
+  return seen;
+}
+
+// ===========================================================================
+// WEB APP — a read-only monitoring dashboard, locked to the company domain.
+// ===========================================================================
+
+/**
+ * Serve the dashboard. Deploy As: user deploying; Access: anyone in the domain
+ * (see appsscript.json). We still re-check the signed-in address here so a
+ * misconfigured deployment cannot leak the data to an outside account.
+ */
+function doGet() {
+  if (!viewerEmail_()) {
+    return HtmlService.createHtmlOutput(
+      '<p style="font-family:sans-serif;padding:2rem">Please sign in with your ' +
+      '<b>@' + CONFIG.workEmailDomain + '</b> account to view this dashboard.</p>');
+  }
+  return HtmlService.createTemplateFromFile('purchase-order-webapp')
+    .evaluate()
+    .setTitle('Millcreek — Purchase Orders')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * Data for the dashboard: the most recent rows plus a few headline numbers.
+ * Refuses to return anything to a non-domain viewer — defence in depth on top
+ * of the deployment's own domain restriction.
+ */
+function getDashboardData() {
+  if (!viewerEmail_()) throw new Error('Not authorised.');
+
+  var sheet = SpreadsheetApp.getActive().getSheetByName(CONFIG.sheetName);
+  var lastRow = sheet ? sheet.getLastRow() : 0;
+  if (!sheet || lastRow < 2) {
+    return { headers: COLUMNS.map(function (c) { return c.header; }), rows: [],
+             totalRows: 0, totalUnits: 0, totalSpend: 0, lastRun: lastRunLabel_() };
+  }
+
+  var width = COLUMNS.length;
+  var take = Math.min(50, lastRow - 1);
+  var values = sheet.getRange(lastRow - take + 1, 1, take, width).getValues();
+  values.reverse();   // newest first
+
+  var idx = keyIndex_();
+  var totalUnits = 0, totalSpend = 0;
+  var allUnits = sheet.getRange(2, idx.units + 1, lastRow - 1, 1).getValues();
+  var allSpend = sheet.getRange(2, idx.totalCost + 1, lastRow - 1, 1).getValues();
+  allUnits.forEach(function (r) { totalUnits += toNumber_(r[0]) || 0; });
+  allSpend.forEach(function (r) { totalSpend += toNumber_(r[0]) || 0; });
+
+  return {
+    headers: COLUMNS.map(function (c) { return c.header; }),
+    rows: values,
+    totalRows: lastRow - 1,
+    totalUnits: totalUnits,
+    totalSpend: round2_(totalSpend),
+    lastRun: lastRunLabel_()
+  };
+}
+
+/** Let the dashboard "Check now" button trigger a run on demand. */
+function checkNow() {
+  if (!viewerEmail_()) throw new Error('Not authorised.');
+  processPurchaseOrders();
+  return getDashboardData();
+}
+
+/** Map each COLUMNS key to its zero-based position. */
+function keyIndex_() {
+  var idx = {};
+  COLUMNS.forEach(function (c, i) { idx[c.key] = i; });
+  return idx;
+}
+
+/** Human label for when the reader last advanced its watermark. */
+function lastRunLabel_() {
+  var ms = Number(PropertiesService.getScriptProperties().getProperty(PROP_KEY_WATERMARK) || 0);
+  if (!ms) return 'not yet run';
+  return Utilities.formatDate(new Date(ms), Session.getScriptTimeZone(),
+    'EEE d MMM, h:mm a');
+}
+
+/**
+ * The signed-in viewer's work address, or '' if we cannot confirm it is a
+ * company account. Never guesses with getEffectiveUser() (which would return
+ * the script owner and defeat the check).
+ */
+function viewerEmail_() {
+  var email = '';
+  try {
+    email = String(Session.getActiveUser().getEmail() || '').trim();
+  } catch (err) {
+    return '';
+  }
+  if (!email) return '';
+  var domain = String(CONFIG.workEmailDomain || '').trim().toLowerCase();
+  if (domain && email.toLowerCase().slice(-(domain.length + 1)) !== '@' + domain) {
+    return '';
+  }
+  return email;
+}
+
+// ===========================================================================
+// SMALL UTILITIES
+// ===========================================================================
+
+/** First capture group of the first match, trimmed, or '' . */
+function firstMatch_(text, re) {
+  var m = String(text || '').match(re);
+  return m && m[1] ? m[1].trim() : '';
+}
+
+/** Parse "$1,234.50" / "1,234.5" / "200" to a Number, or NaN. */
+function toNumber_(s) {
+  if (typeof s === 'number') return s;
+  var cleaned = String(s || '').replace(/[$,\s]/g, '');
+  if (!cleaned) return NaN;
+  var n = Number(cleaned);
+  return isFinite(n) ? n : NaN;
+}
+
+/** Round to cents. */
+function round2_(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/** Email the owner if a run throws, using their own quota (no extra scope). */
+function reportError_(err) {
+  var to = CONFIG.alertOnErrorTo || [];
+  if (!to.length) return;
+  try {
+    MailApp.sendEmail({
+      to: to.join(','),
+      subject: 'Purchase Order Reader: run failed',
+      body: 'A scheduled run threw an error:\n\n' + (err && err.stack || err) +
+            '\n\nCheck Extensions -> Apps Script -> Executions for detail.'
+    });
+  } catch (ignored) { /* never let alerting mask the original error */ }
+}
+
+// ===========================================================================
+// SELF-TEST — prove the parser works before you wire up real mail.
+// ===========================================================================
+
+// A sanitised sample PO. Replace this with a real (scrubbed) email body to
+// tune parsePurchaseOrder_() to your suppliers, then run runParserSelfTest().
+var SAMPLE_PO = [
+  'Purchase Order #: PO-10432',
+  'Supplier: Example Grower Co.',
+  'Order Date: 2026-08-01',
+  '',
+  'Item                         Units    Unit Cost   Total',
+  "Echinacea 'Magnus'           200      1.85        370.00",
+  "Rudbeckia 'Goldsturm'        150      1.60        240.00",
+  '300 x Salvia May Night @ $1.40 = $420.00',
+  '',
+  'Order Total: 1030.00'
+].join('\n');
+
+/** Run from the editor and read the Logs (View -> Logs) to see the extraction. */
+function runParserSelfTest() {
+  var parsed = parsePurchaseOrder_(SAMPLE_PO, 'Your purchase order PO-10432');
+  Logger.log('Order number: %s', parsed.orderNumber);
+  Logger.log('Supplier:     %s', parsed.supplier);
+  Logger.log('Order date:   %s', parsed.orderDate);
+  Logger.log('Line items:   %s', parsed.items.length);
+  parsed.items.forEach(function (it, i) {
+    Logger.log('  %s. %s  x%s  @%s  = %s',
+      i + 1, it.itemName, it.units, it.unitCost, it.totalCost);
+  });
+  if (parsed.items.length !== 3) {
+    throw new Error('Expected 3 line items from the sample, got ' + parsed.items.length +
+                    ' — adjust parseLineItem_ for your format.');
+  }
+  return parsed;
+}
