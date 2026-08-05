@@ -94,7 +94,50 @@ var CONFIG = {
   // Notify these addresses if a run hits an error (leave [] for none). Uses
   // no extra scope — this is the owner's own Apps Script quota mail, not the
   // read-only Gmail service.
-  alertOnErrorTo: []
+  alertOnErrorTo: [],
+
+  // --- AI extraction (Google Gemini via Vertex AI) ----------------------
+  // Supplier PDFs come in many messy layouts; Gemini reads them reliably where
+  // hand-written patterns can't. It runs inside Google Cloud (not a third
+  // party, and it does not train on your data), and it authenticates with this
+  // script's OWN Google login — so there is no API key to store.
+  //
+  // Setup (see README): make/enable a Google Cloud project with the Vertex AI
+  // API turned on, point this Apps Script project at it (Project Settings ->
+  // Google Cloud Platform (GCP) Project), then fill in `project` below. When
+  // enabled is false the reader uses the built-in regex parser instead.
+  ai: {
+    enabled: false,
+    project: '',                 // your GCP project ID, e.g. 'millcreek-po-reader'
+    location: 'us-central1',     // a Vertex AI region
+    model: 'gemini-2.5-flash'    // e.g. gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash-001
+  }
+};
+
+// JSON shape we ask Gemini to return, and that the writer expects.
+var AI_SCHEMA = {
+  type: 'object',
+  properties: {
+    orderNumber: { type: 'string' },
+    supplier: { type: 'string' },
+    orderDate: { type: 'string' },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          itemName: { type: 'string' },
+          sku: { type: 'string' },
+          spec: { type: 'string' },
+          units: { type: 'number' },
+          unitCost: { type: 'number' },
+          totalCost: { type: 'number' }
+        },
+        required: ['itemName', 'units']
+      }
+    }
+  },
+  required: ['orderNumber', 'items']
 };
 
 // Column order for the sheet. Header text is what a person reads; `key` is what
@@ -205,6 +248,11 @@ function runDiagnostics() {
   out.push('6. You are seen as: ' + (viewerEmail_() ||
     '(empty / not a ' + CONFIG.workEmailDomain + ' account — the web app would refuse this login)'));
 
+  var ai = CONFIG.ai || {};
+  out.push('7. AI extraction: ' + (ai.enabled
+    ? 'on, model ' + ai.model + ', project ' + (ai.project || 'NOT SET -> set CONFIG.ai.project')
+    : 'off (using the regex parser)'));
+
   var report = out.join('\n');
   Logger.log(report);
   return report;
@@ -251,9 +299,10 @@ function dumpLatestPdfText() {
       '----- extracted text (first 4000 chars) -----\n%s',
       msg.from, msg.subject, atts[0].filename, String(text).slice(0, 4000));
 
-    var parsed = parsePurchaseOrder_(text, msg.subject);
-    Logger.log('----- what the parser found -----\norder=%s  supplier=%s  items=%s',
-      parsed.orderNumber, parsed.supplier, parsed.items.length);
+    var parsed = parseSource_(text, msg.subject);
+    Logger.log('----- what the extractor found (%s) -----\n%s',
+      (CONFIG.ai && CONFIG.ai.enabled) ? 'Gemini' : 'regex',
+      JSON.stringify(parsed, null, 2));
     return text;
   }
   Logger.log('No allowed message with a PDF attachment found in the search window.');
@@ -329,7 +378,7 @@ function processPurchaseOrders() {
       });
 
       sources.forEach(function (src) {
-        var parsed = parsePurchaseOrder_(src.text, msg.subject) || {};
+        var parsed = parseSource_(src.text, msg.subject) || {};
         var order = String(parsed.orderNumber || '').trim();
         if (!order) return;                               // couldn't identify a PO here
         if (seenOrders[order.toLowerCase()]) return;      // already logged this PO
@@ -532,6 +581,126 @@ function pdfBlobToText_(pdfBlob) {
   } finally {
     try { Drive.Files.remove(id); } catch (e) { /* best-effort cleanup of the scratch Doc */ }
   }
+}
+
+// ===========================================================================
+// AI EXTRACTION — Google Gemini via Vertex AI.
+// ===========================================================================
+//
+// Why Vertex AI and not the consumer Gemini API: Vertex runs inside Google
+// Cloud under your organisation's data governance (no training on your prompts),
+// and it accepts this script's OWN Google OAuth token — so there is no API key
+// to store anywhere. The text goes to Google, not to any third party.
+
+/**
+ * Parse one text source into an order, preferring Gemini when it is turned on
+ * and the text is substantial, and always falling back to the regex parser
+ * (so the reader still works if AI is off or a call fails).
+ */
+function parseSource_(text, subject) {
+  var cfg = CONFIG.ai || {};
+  if (cfg.enabled && text && text.length > 60) {
+    try {
+      var g = extractWithGemini_(text, subject);
+      if (g && g.orderNumber && g.items.length) return g;
+    } catch (e) {
+      Logger.log('AI extraction failed (%s); using the regex parser instead.',
+        (e && e.message) || e);
+    }
+  }
+  return parsePurchaseOrder_(text, subject);
+}
+
+/**
+ * Ask Gemini to pull the order fields out of a block of text, returned as JSON
+ * that matches AI_SCHEMA. Authenticated with the script's OAuth token — no key.
+ */
+function extractWithGemini_(text, subject) {
+  var cfg = CONFIG.ai || {};
+  if (!cfg.project) throw new Error('CONFIG.ai.project is not set.');
+
+  var url = 'https://' + cfg.location + '-aiplatform.googleapis.com/v1/projects/' +
+    cfg.project + '/locations/' + cfg.location +
+    '/publishers/google/models/' + cfg.model + ':generateContent';
+
+  var prompt = [
+    'You extract data from a plant/nursery purchase order or order acknowledgement.',
+    'Return ONLY JSON matching the given schema. Rules:',
+    '- orderNumber: the supplier order or acknowledgement number (e.g. "EHR ORDER NO.",',
+    '  "Order No", or the number after "ACKNOWLEDGEMENT - <date>").',
+    '- One entry per real plant line. IGNORE $0.00 label rows, pot/container summary',
+    '  rows, freight, tax, discounts, and grand-total lines.',
+    '- units: the quantity ORDERED.',
+    '- unitCost: the per-unit price the BUYER pays (e.g. "Your Price"), not the catalog/list price.',
+    '- totalCost: the line extended price.',
+    '- itemName: the plant / botanical name. sku: any item, SKU, or variety code.',
+    '  spec: the container / cell / size (e.g. "72 C.P.", "#3 Container", "G1").',
+    '- Unknown string -> "", unknown number -> 0.',
+    subject ? 'Email subject: ' + subject : '',
+    '', 'Document text:', String(text || '').slice(0, 100000)
+  ].join('\n');
+
+  var payload = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: 'application/json',
+      responseSchema: AI_SCHEMA
+    }
+  };
+
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+
+  var code = res.getResponseCode();
+  var raw = res.getContentText();
+  if (code !== 200) throw new Error('Vertex AI HTTP ' + code + ': ' + raw.slice(0, 600));
+
+  var data = JSON.parse(raw);
+  var cand = data && data.candidates && data.candidates[0];
+  var part = cand && cand.content && cand.content.parts && cand.content.parts[0];
+  if (!part || !part.text) throw new Error('Vertex AI returned no content.');
+
+  return normaliseAiResult_(JSON.parse(part.text));
+}
+
+/** Coerce a Gemini result into the same shape the regex parser produces. */
+function normaliseAiResult_(p) {
+  p = p || {};
+  var items = (Array.isArray(p.items) ? p.items : []).map(function (it) {
+    it = it || {};
+    return {
+      itemName: String(it.itemName || '').trim(),
+      sku: String(it.sku || '').trim(),
+      spec: String(it.spec || '').trim(),
+      units: toNumber_(it.units),
+      unitCost: toNumber_(it.unitCost),
+      totalCost: toNumber_(it.totalCost)
+    };
+  }).filter(function (it) { return it.itemName && it.units > 0; });
+
+  return {
+    orderNumber: String(p.orderNumber || '').trim(),
+    supplier: String(p.supplier || '').trim(),
+    orderDate: String(p.orderDate || '').trim(),
+    items: items
+  };
+}
+
+/** Send SAMPLE_PO to Gemini and log the result, to prove the AI path is wired up. */
+function testAiExtraction() {
+  if (!(CONFIG.ai && CONFIG.ai.enabled)) {
+    Logger.log('CONFIG.ai.enabled is false — turn it on and set project first.');
+    return;
+  }
+  var r = extractWithGemini_(SAMPLE_PO, 'Test purchase order');
+  Logger.log('Gemini extraction of SAMPLE_PO:\n%s', JSON.stringify(r, null, 2));
+  return r;
 }
 
 // ===========================================================================

@@ -67,9 +67,12 @@ afterward. Seven concrete properties:
    `@millcreekplants.com` sign-ins, re-checked on the server for every request.
 
 **What this design deliberately does _not_ do:** send email, delete email, read
-or change other files already in your Drive, call outside services, or store any
-secret. The only files it creates are throwaway conversion documents it deletes
-seconds later. Each of the other doors is simply not built.
+or change other files already in your Drive, contact any non-Google service, or
+store any secret. The only files it creates are throwaway conversion documents
+it deletes seconds later. The one outbound call it can make — only if you turn
+on AI extraction — is to **your own** Google Cloud Vertex AI, authenticated with
+the script's own Google login (no key). Each of the other doors is simply not
+built.
 
 ### The exact permissions it asks for
 
@@ -81,8 +84,13 @@ this and nothing more. Each is the narrowest scope that still works:
 | `gmail.readonly` | Read messages and their attachments | Send, reply, delete, or edit any mail |
 | `spreadsheets.currentonly` | Write to the one bound sheet | Open or touch any other Drive file |
 | `drive.file` | Create and manage **only files this app itself creates** | See, read, or change anything else already in your Drive |
+| `cloud-platform` + `script.external_request` | Call **your** Google Cloud Vertex AI (Gemini) to read messy PDFs | Only used to POST document text to Gemini; no other service is contacted |
 | `script.scriptapp` | Create the 15-minute trigger | — |
 | `userinfo.email` | See the signed-in address (for the domain lock) | Read any other profile data |
+
+> The last two scopes appear **only if you turn on AI extraction** (`CONFIG.ai`).
+> Leave it off and the app keeps the shorter scope list and uses the built-in
+> regex parser. See [AI extraction](#ai-extraction-for-messy-pdfs) below.
 
 > The read-only Gmail scope is only possible because the code uses the Gmail
 > *advanced service* (enabled in the manifest). The convenient `GmailApp` class
@@ -103,6 +111,40 @@ text out of a digital one), reads that Doc's text, and then **deletes the
 temporary Doc immediately**. The PDF is never uploaded anywhere outside your
 Workspace and never touches a third-party service — the conversion happens
 inside Google. This is the *only* reason `drive.file` is requested.
+
+### AI extraction (for messy PDFs)
+
+Real supplier PDFs come in wildly different layouts — multi-column forms,
+line items that wrap across several lines, `$0.00` label rows, multi-page
+orders. Hand-written patterns are brittle against that variety. So the reader
+can hand the extracted text to **Gemini** for structured extraction, which is
+far more reliable across vendors.
+
+It uses **Vertex AI** (Gemini inside Google Cloud), chosen deliberately for the
+security posture:
+
+- **Stays in Google.** The text goes to Vertex AI in *your own* Google Cloud
+  project — not to a third-party AI service. Under Vertex AI's terms Google
+  **does not use your prompts to train models**.
+- **No API key to store.** It authenticates with this script's *own* Google
+  login (`ScriptApp.getOAuthToken()`), so there is no secret saved anywhere —
+  consistent with the rest of the design.
+- **Optional and off by default.** With `CONFIG.ai.enabled = false` the two AI
+  scopes are never requested and the regex parser is used. The regex parser
+  also remains the automatic fallback if an AI call ever fails.
+
+**One-time setup:**
+1. Create (or pick) a **Google Cloud project** and note its **Project ID**.
+   Enable billing (Gemini Flash is a fraction of a cent per PDF).
+2. In that project, enable the **Vertex AI API**
+   (APIs & Services → Enable APIs → "Vertex AI API").
+3. Point this Apps Script at that project: **Project Settings (gear) → Google
+   Cloud Platform (GCP) Project → Change project →** enter the project number.
+4. In `CONFIG.ai`, set `enabled: true` and `project: '<your project ID>'`
+   (adjust `location`/`model` if you like).
+5. Run `setUp()` again and approve the new consent (it now lists Google Cloud
+   and external-request access), then run `testAiExtraction()` to confirm it
+   returns structured JSON, or `dumpLatestPdfText()` to see it read a real PDF.
 
 ---
 
@@ -281,13 +323,16 @@ re-import is tidiest if you captured orders under the old version.)
 
 ## Limits to be honest about (it's a proof of concept)
 
-- **The parser is the demo's soft spot.** It reads common layouts from both the
-  email body and PDF attachments, but the exact patterns will need tuning per
-  supplier (step 5, and `dumpLatestPdfText()` for PDFs). Scanned/photographed
-  PDFs are OCR'd but less reliable than digitally generated ones.
-- **PDF reading costs a little time and quota** — each PDF is converted through a
-  temporary Google Doc. Fine at nursery order volumes; not built for thousands a
-  day.
+- **Extraction accuracy.** With AI on, Gemini reads varied supplier layouts well
+  but is not infallible — spot-check totals against the PDF, especially for a new
+  supplier or a "changed"/partial order. With AI off, the regex parser is more
+  brittle and needs tuning per layout. Either way, `dumpLatestPdfText()` shows
+  what was extracted so you can verify.
+- **Cost & time.** Each PDF is converted through a temporary Google Doc, and (if
+  AI is on) one Gemini call runs per document — a fraction of a cent each. Fine
+  at nursery order volumes; not built for thousands a day.
+- **Scanned/photographed PDFs** are OCR'd but less reliable than digitally
+  generated ones.
 - **~15-minute latency**, since it polls on a schedule rather than reacting the
   instant mail arrives. Fine for orders; not for anything real-time.
 - **Owner-bound.** It runs as whoever set it up and approved the scopes. If that
