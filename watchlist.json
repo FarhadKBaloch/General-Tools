@@ -1,6 +1,6 @@
 {
   "note": "Written by sprout-scout-bot. Each entry is a symptom-lag follow-up: something flagged on `flaggedOn` that should be visible around `checkOn`.",
-  "updated": "2026-08-04",
+  "updated": "2026-08-05",
   "entries": [
     {
       "flaggedOn": "2026-07-23",
@@ -76,7 +76,8 @@
       "detail": "foliage stayed wet ~9h at 67°F",
       "lagLo": 5,
       "lagHi": 12,
-      "windowEnd": "2026-08-08"
+      "windowEnd": "2026-08-08",
+      "reported": true
     },
     {
       "flaggedOn": "2026-07-28",
@@ -147,6 +148,16 @@
       "lagLo": 5,
       "lagHi": 12,
       "windowEnd": "2026-08-15"
+    },
+    {
+      "flaggedOn": "2026-08-05",
+      "checkOn": "2026-08-13",
+      "kind": "heat",
+      "label": "Heat stress, high 89°F",
+      "detail": "watch newly potted and tender material",
+      "lagLo": 2,
+      "lagHi": 14,
+      "windowEnd": "2026-08-19"
     }
   ]
 }
