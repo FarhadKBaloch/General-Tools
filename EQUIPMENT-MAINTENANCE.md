@@ -400,6 +400,12 @@ Two small things that matter in practice:
   The photo is saved only once the request is safely on the sheet, and if Drive
   is having a bad day the ticket still goes in — the app says the photo didn't
   upload rather than losing the whole report.
+- **It flags a machine that already has an open ticket.** Pick a machine that's
+  already been reported and a heads-up appears at the top of the form — *Already
+  open: MNT-0123 · "…"* — with a **View** button that jumps to that ticket. It
+  doesn't stop you filing (a machine can have two separate faults), it just keeps
+  five people from logging the same flat tyre five times. The catch-all *General
+  equipment* bucket is left out of this, since its items differ.
 
 ### Open — what needs doing
 

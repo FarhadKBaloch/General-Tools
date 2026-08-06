@@ -27,6 +27,7 @@
     --accent-ink: #1e4a33;
     --urgent: #8e2a1c;
     --urgent-bg: #fbe3df;
+    --warn: #6b4e00; --warn-bg: #fdf0d0; --warn-line: #e6b800;   /* "already open" heads-up */
     /* Data hues, deliberately not the accent: green means "do something" here,
        not "measure something". Validated against both card surfaces. */
     --data-count: #2a78d6;
@@ -299,6 +300,21 @@
     border-radius: var(--radius); padding: 11px 13px; margin: 14px 0 0;
     font-size: 14px; font-weight: 600;
   }
+  /* "Already open" heads-up on the Create screen. A warning colour, not the
+     error red — it is information, and filing anyway is allowed. */
+  .dupwarn {
+    display: flex; align-items: center; gap: 10px; margin: 14px 0 0;
+    background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-line);
+    border-radius: var(--radius); padding: 10px 12px;
+  }
+  .dupwarn .txt { flex: 1; font-size: 14px; line-height: 1.35; }
+  .dupwarn .txt b { font-weight: 700; }
+  .dupwarn button {
+    flex: 0 0 auto; min-height: 36px; padding: 0 14px;
+    font: inherit; font-size: 13px; font-weight: 700;
+    border: 1px solid var(--warn-line); border-radius: var(--radius);
+    background: transparent; color: var(--warn); cursor: pointer;
+  }
   .photorow { display: flex; align-items: center; gap: 10px; }
   .photorow label.file {
     flex: 1; display: flex; align-items: center; justify-content: center;
@@ -444,6 +460,7 @@
       --line: #333a36; --line-2: #262d2a; --bg: #121614; --card: #1b201e;
       --accent: #5bab7f; --accent-ink: #8fcaa8;
       --urgent: #f0a396; --urgent-bg: #46201a;
+      --warn: #f4d391; --warn-bg: #3a2e0f; --warn-line: #6b5416;
       --data-count: #3987e5; --data-down: #d95926; --track: #2a312e;
       --st-open: #c98500; --st-progress: #3987e5; --st-waiting: #199e70;
     }
@@ -715,6 +732,54 @@
     }
   }
 
+  /**
+   * Open tickets already logged against a machine — used to warn before someone
+   * files a duplicate. Reads the list the app already has, so it costs nothing.
+   * The catch-all "General equipment" bucket is skipped: a ladder and a pallet
+   * jack share that name but are different things, so it would false-match.
+   */
+  function openTicketsFor(name) {
+    if (!name || !state.open.data) return [];
+    if (state.options && state.options.generalEquipment &&
+        name === state.options.generalEquipment) return [];
+    return state.open.data.requests.filter(function (r) {
+      return r.equipment === name && !isClosed(r);
+    });
+  }
+
+  function renderDupWarn() {
+    var wrap = document.getElementById('dupWarn');
+    if (!wrap) return;
+    var equip = document.getElementById('fEquip');
+    var open = openTicketsFor(equip ? equip.value : '');
+    if (!open.length) { wrap.innerHTML = ''; return; }
+
+    var summary = open.length === 1
+      ? esc(open[0].ticket) + ' · “' +
+          esc(String(open[0].problem || '(no description)').replace(/\s+/g, ' ').slice(0, 60)) + '”'
+      : open.length + ' tickets are already open for this machine';
+
+    wrap.innerHTML = '<div class="dupwarn">' +
+        '<div class="txt"><b>Already open:</b> ' + summary + '</div>' +
+        '<button type="button" id="dupView">View</button>' +
+      '</div>';
+
+    document.getElementById('dupView').addEventListener('click', function () {
+      var machine = equip.value;
+      // Land on the Open tab, filtered to this machine (and its category, so the
+      // chips reflect it), instead of starting a second ticket.
+      var cat = 'All';
+      (state.open.data.categories || []).forEach(function (g) {
+        if (g.items.indexOf(machine) !== -1) cat = g.name;
+      });
+      state.open.category = cat;
+      state.open.equipment = machine;
+      state.open.onlyOpen = true;
+      state.create.open = false;
+      selectTab('open');
+    });
+  }
+
   function renderCreate() {
     subbarEl.innerHTML = '';
     countsEl.textContent = '';
@@ -773,6 +838,7 @@
     viewEl.innerHTML =
       '<div class="formcard' + (state.create.entering ? ' sheet-in' : '') + '">' +
         (state.create.error ? '<div class="formerr">' + esc(state.create.error) + '</div>' : '') +
+        '<div id="dupWarn"></div>' +
 
         '<label class="field first" for="fEquip">Equipment <span class="req">*</span></label>' +
         '<select id="fEquip">' +
@@ -826,8 +892,9 @@
     function syncItem() {
       itemWrap.hidden = !(opts.generalEquipment && equip.value === opts.generalEquipment);
     }
-    equip.addEventListener('change', syncItem);
+    equip.addEventListener('change', function () { syncItem(); renderDupWarn(); });
     syncItem();
+    renderDupWarn();
 
     document.getElementById('fPhoto').addEventListener('change', onPhotoChosen);
     if (state.create.photo) showPhotoPreview();
