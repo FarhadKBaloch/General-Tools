@@ -20,9 +20,13 @@ const CFG = {
   webhook: process.env.SLACK_WEBHOOK_URL,
   lat: parseFloat(process.env.SITE_LAT || '40.2341'),
   lon: parseFloat(process.env.SITE_LON || '-83.1745'),
+  // Not printed in the brief (the location never changes, so it was noise),
+  // but kept for error messages and if a second site is ever added.
   site: process.env.SITE_NAME || 'Ostrander, OH',
   tz: process.env.SITE_TZ || 'America/New_York',
   dryRun: process.argv.includes('--dry-run'),
+  // Optional: link to the scouting dashboard. Omitted entirely if unset.
+  dashboardUrl: process.env.DASHBOARD_URL || '',
   // Who to notify. Options:
   //   'alerts'   -> DEFAULT. @channel only on freeze/frost/cold-night/heat-stress
   //                 days. The brief still posts daily; it just does not interrupt
@@ -305,13 +309,16 @@ function mentionPrefix(brief) {
 function buildPayload(t, brief) {
   const dateStr = t.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const gdd = L.gddFor(t.tmax, t.tmin);
-  const summary = [
-    `High ${f0(t.tmax)}°F / Low ${f0(t.tmin)}°F`,
-    t.pop != null ? `${t.pop}% rain` : null,
-    `RH ${f0(t.rh)}%`,
-    t.wind != null ? `wind to ${f0(t.wind)} mph` : null,
-    gdd != null ? `${f1(gdd)} GDD` : null,
+  // Two lines: the temperatures growers check first, then the supporting figures.
+  // Values are bolded so they stand out from their labels at a glance.
+  const line1 = `*${f0(t.tmax)}°F* high  ·  *${f0(t.tmin)}°F* low`
+    + (t.pop != null ? `  ·  *${t.pop}%* chance of rain` : '');
+  const line2 = [
+    `Humidity *${f0(t.rh)}%*`,
+    t.wind != null ? `wind to *${f0(t.wind)} mph*` : null,
+    gdd != null ? `*${f1(gdd)}* GDD` : null,
   ].filter(Boolean).join('  ·  ');
+  const summary = `${line1}\n${line2}`;
 
   const mention = mentionPrefix(brief);
   const blocks = [
@@ -322,13 +329,21 @@ function buildPayload(t, brief) {
   if (mention) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `${mention}here is today's brief:` } });
   }
-  blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `*${CFG.site}*  ·  ${summary}` }] });
+  // A context block renders small and grey, which buried the conditions. A
+  // section block is full body size, so the numbers growers scan first are legible.
+  blocks.push({ type: 'section', text: { type: 'mrkdwn', text: summary } });
   if (brief.chips.length) {
     blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: brief.chips.map(c => `\`${c}\``).join('  ') }] });
   }
   blocks.push({ type: 'divider' });
   for (const l of brief.lines) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `${l.icon}  ${l.text}` } });
+  }
+  if (CFG.dashboardUrl) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `<${CFG.dashboardUrl}|*See which of your crops are affected →*>` }
+    });
   }
   blocks.push({
     type: 'context',
