@@ -21,6 +21,7 @@ jobs:
         run: node sprout-scout-bot.js
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
 
       - name: Save the follow-up watchlist
         run: |
