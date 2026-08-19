@@ -1,6 +1,6 @@
 {
   "note": "Written by sprout-scout-bot. Each entry is a symptom-lag follow-up: something flagged on `flaggedOn` that should be visible around `checkOn`.",
-  "updated": "2026-08-18",
+  "updated": "2026-08-19",
   "entries": [
     {
       "flaggedOn": "2026-07-23",
@@ -219,7 +219,8 @@
       "detail": "foliage stayed wet ~11h at 71°F",
       "lagLo": 5,
       "lagHi": 12,
-      "windowEnd": "2026-08-22"
+      "windowEnd": "2026-08-22",
+      "reported": true
     },
     {
       "flaggedOn": "2026-08-11",
@@ -300,6 +301,16 @@
       "lagLo": 5,
       "lagHi": 12,
       "windowEnd": "2026-08-30"
+    },
+    {
+      "flaggedOn": "2026-08-19",
+      "checkOn": "2026-08-28",
+      "kind": "disease",
+      "label": "Basil downy mildew",
+      "detail": "foliage stayed wet ~4h at 69°F",
+      "lagLo": 5,
+      "lagHi": 12,
+      "windowEnd": "2026-08-31"
     }
   ]
 }
