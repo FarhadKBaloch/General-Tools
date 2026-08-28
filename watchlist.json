@@ -1,6 +1,6 @@
 {
   "note": "Written by sprout-scout-bot. Each entry is a symptom-lag follow-up: something flagged on `flaggedOn` that should be visible around `checkOn`.",
-  "updated": "2026-08-27",
+  "updated": "2026-08-28",
   "entries": [
     {
       "flaggedOn": "2026-07-23",
@@ -318,7 +318,8 @@
       "detail": "foliage stayed wet ~4h at 69°F",
       "lagLo": 5,
       "lagHi": 12,
-      "windowEnd": "2026-08-31"
+      "windowEnd": "2026-08-31",
+      "reported": true
     },
     {
       "flaggedOn": "2026-08-20",
@@ -369,6 +370,16 @@
       "lagLo": 5,
       "lagHi": 12,
       "windowEnd": "2026-09-08"
+    },
+    {
+      "flaggedOn": "2026-08-28",
+      "checkOn": "2026-09-06",
+      "kind": "disease",
+      "label": "Botrytis (gray mold), Downy mildew, Basil downy mildew",
+      "detail": "foliage stayed wet ~11h at 64°F",
+      "lagLo": 5,
+      "lagHi": 12,
+      "windowEnd": "2026-09-09"
     }
   ]
 }
