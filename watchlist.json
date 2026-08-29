@@ -1,6 +1,6 @@
 {
   "note": "Written by sprout-scout-bot. Each entry is a symptom-lag follow-up: something flagged on `flaggedOn` that should be visible around `checkOn`.",
-  "updated": "2026-08-28",
+  "updated": "2026-08-29",
   "entries": [
     {
       "flaggedOn": "2026-07-23",
@@ -329,7 +329,8 @@
       "detail": "foliage stayed wet ~11h at 68°F",
       "lagLo": 5,
       "lagHi": 12,
-      "windowEnd": "2026-09-01"
+      "windowEnd": "2026-09-01",
+      "reported": true
     },
     {
       "flaggedOn": "2026-08-21",
