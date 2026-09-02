@@ -1,6 +1,6 @@
 {
   "note": "Written by sprout-scout-bot. Each entry is a symptom-lag follow-up: something flagged on `flaggedOn` that should be visible around `checkOn`.",
-  "updated": "2026-09-01",
+  "updated": "2026-09-02",
   "entries": [
     {
       "flaggedOn": "2026-07-23",
@@ -423,6 +423,16 @@
       "lagLo": 5,
       "lagHi": 12,
       "windowEnd": "2026-09-13"
+    },
+    {
+      "flaggedOn": "2026-09-02",
+      "checkOn": "2026-09-10",
+      "kind": "heat",
+      "label": "Heat stress, high 92°F",
+      "detail": "watch newly potted and tender material",
+      "lagLo": 2,
+      "lagHi": 14,
+      "windowEnd": "2026-09-16"
     }
   ]
 }
