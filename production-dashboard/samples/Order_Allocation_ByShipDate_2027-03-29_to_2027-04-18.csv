@@ -1,0 +1,8 @@
+﻿"Order Number","Ship Date","Bill To Company","Product","Description","Qty Ordered","Allocated Qty","Size","Category","Type","Sales Price","Completed","Ship Via"
+"SO-100201","4/6/2027 12:00:00 AM","Sample Garden Center A","NEPCP1","Nepeta 'Cat's Pajamas'","600","600","#1","Perennials","Perennial","6.25","0","Millcreek Truck"
+"SO-100201","4/6/2027 12:00:00 AM","Sample Garden Center A","SALCAR1","Salvia nemorosa 'Caradonna'","400","300","#1","Perennials","Perennial","6.25","0","Millcreek Truck"
+"SO-100202","4/13/2027 12:00:00 AM","Sample Landscape Co","NEPCP1","Nepeta 'Cat's Pajamas'","900","900","#1","Perennials","Perennial","6.25","0","PICK UP"
+"SO-100203","3/30/2027 12:00:00 AM","Sample Garden Center B","THYGW45","Thymus 'German Winter'","480","480","4.5""","Herbs","Herb","2.1","0","Millcreek Truck"
+"SO-100203","3/30/2027 12:00:00 AM","Sample Garden Center B","PANNW1","Panicum virgatum 'Northwind'","200","200","#1","Grasses","Ornamental Grass","7.5","0","Millcreek Truck"
+"SO-100204","4/6/2027 12:00:00 AM","Sample Garden Center A","TRAY1020","1020 Tray","50","50","Each","Hard Goods","Supply","1.1","0","Millcreek Truck"
+"SO-100150","9/1/2026 12:00:00 AM","Sample Garden Center C","RUDGS1","Rudbeckia 'Goldsturm'","24","24","#1","Perennials","Perennial","6.25","1","Millcreek Truck"

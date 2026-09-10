@@ -1,0 +1,1965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F2EE">
+<title>Millcreek — Production &amp; Propagation</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&display=swap');
+
+:root{
+  --paper:#F4F2EE;
+  --paper-2:#EDEAE4;
+  --white:#FFFFFF;
+  --blush:#EFDCD3;
+  --blush-2:#E6C9BC;
+  --forest:#123932;
+  --forest-2:#1D5147;
+  --sage:#DEE6DC;
+  --ink:#1D1E1B;
+  --muted:#807D75;
+  --rust:#B4522B;
+  --amber:#C08A2A;
+  --line:rgba(29,30,27,.09);
+  --r-lg:26px;
+  --r-md:18px;
+  --r-sm:12px;
+  --sh:0 1px 2px rgba(40,32,26,.04), 0 14px 30px -16px rgba(40,32,26,.20);
+  --sh-lift:0 2px 6px rgba(40,32,26,.06), 0 26px 46px -20px rgba(40,32,26,.30);
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  -webkit-tap-highlight-color:rgba(18,57,50,.10);
+  overflow-x:hidden;
+}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+:focus-visible{outline:2px solid var(--forest);outline-offset:3px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.wrap{max-width:1320px;margin:0 auto;padding:22px 26px calc(64px + env(safe-area-inset-bottom))}
+section[id]{scroll-margin-top:14px}
+
+/* ---------- labels & type ---------- */
+.label{font-size:12px;color:var(--muted);letter-spacing:.01em}
+.on-dark .label{color:rgba(255,255,255,.62)}
+.on-blush .label{color:#8C6A5B}
+h1,h2,h3,h4{margin:0;font-weight:400;letter-spacing:-.02em}
+.display{font-size:40px;line-height:1.06;font-weight:400}
+.sec-title{font-size:25px;margin-bottom:2px}
+.sec-sub{font-size:13.5px;color:var(--muted)}
+.link{
+  display:inline-block;font-size:13px;color:inherit;text-decoration:none;
+  border-bottom:1.5px solid currentColor;padding-bottom:2px;
+}
+.link:hover{opacity:.62}
+
+/* ---------- top bar ---------- */
+.topbar{display:flex;align-items:center;gap:18px;margin-bottom:22px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-size:19px;letter-spacing:-.03em}
+.brand .mark{width:34px;height:34px;border-radius:50%;background:var(--forest);display:grid;place-items:center}
+.navpills{display:flex;gap:7px}
+.navpill{
+  width:40px;height:40px;border-radius:50%;background:var(--white);display:grid;place-items:center;
+  box-shadow:var(--sh);transition:background .18s,color .18s;color:var(--forest);position:relative;
+}
+.navpill[aria-pressed="true"]{background:var(--forest);color:#fff}
+.navpill:hover{background:var(--sage)}
+.navpill[aria-pressed="true"]:hover{background:var(--forest-2)}
+.search{
+  flex:1;min-width:180px;max-width:330px;height:42px;border-radius:999px;background:var(--white);
+  box-shadow:var(--sh);display:flex;align-items:center;gap:9px;padding:0 16px;
+}
+.search input{border:none;background:none;outline:none;width:100%;font-size:14px}
+.search input::placeholder{color:var(--muted)}
+.livechip{
+  display:flex;align-items:center;gap:8px;height:42px;padding:0 15px;border-radius:999px;
+  background:var(--white);box-shadow:var(--sh);font-size:13px;white-space:nowrap;
+}
+.dot{width:7px;height:7px;border-radius:50%;background:#3F9E6E;animation:pulse 2.2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.78)}}
+.user{display:flex;align-items:center;gap:10px}
+.avatar{
+  width:40px;height:40px;border-radius:50%;background:var(--blush-2);display:grid;place-items:center;
+  font-size:13px;letter-spacing:.02em;color:#6E4534;box-shadow:var(--sh)
+}
+.user .nm{font-size:14px;line-height:1.2}
+.user .rl{font-size:12px;color:var(--muted)}
+
+/* ---------- hero ---------- */
+.hero-grid{display:grid;grid-template-columns:1.72fr 1fr;gap:16px;margin-bottom:16px}
+.card{background:var(--white);border-radius:var(--r-lg);box-shadow:var(--sh);position:relative;overflow:hidden}
+.hero{
+  background:var(--blush);border-radius:var(--r-lg);padding:30px 34px;position:relative;overflow:hidden;
+  min-height:268px;display:flex;flex-direction:column;justify-content:space-between;
+}
+.hero .art{position:absolute;right:-6px;bottom:-8px;width:330px;opacity:.98;pointer-events:none}
+.hero .body{position:relative;max-width:60%}
+.statpill{
+  display:inline-flex;align-items:baseline;gap:10px;background:rgba(255,255,255,.62);
+  border-radius:999px;padding:9px 18px;font-size:14px;color:#7A5648;margin-top:16px;
+}
+.statpill b{font-size:19px;font-weight:500;color:#3C2A22;letter-spacing:-.02em}
+.side-col{display:flex;flex-direction:column;gap:16px}
+.side-card{padding:22px 24px;min-height:126px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
+.side-card .art{position:absolute;right:-14px;bottom:-14px;width:132px;opacity:.95}
+.side-card h3{font-size:23px;line-height:1.12;margin:4px 0 0;max-width:74%}
+.side-card.dark{background:var(--forest);color:#fff}
+.side-card .link{margin-top:14px}
+
+/* ---------- env strip ---------- */
+.env{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:26px}
+.env-tile{background:var(--white);border-radius:var(--r-md);box-shadow:var(--sh);padding:15px 18px}
+.env-tile .v{font-size:22px;letter-spacing:-.03em;margin-top:2px}
+.env-tile .v small{font-size:12px;color:var(--muted);letter-spacing:0}
+.trend{font-size:12px;color:var(--muted);margin-top:2px}
+.trend.up{color:#3F7D5C}
+.trend.warn{color:var(--rust)}
+
+/* ---------- section head ---------- */
+.sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:34px 0 16px;flex-wrap:wrap}
+.filters{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.fpill{
+  display:flex;align-items:center;gap:9px;height:44px;padding:0 20px 0 7px;border-radius:999px;
+  background:var(--white);box-shadow:var(--sh);font-size:14px;transition:background .18s,color .18s;position:relative;
+}
+.fpill.plain{padding-left:20px}
+.fpill .thumb{width:31px;height:31px;border-radius:50%;background:var(--sage);overflow:hidden;display:grid;place-items:center;flex:none}
+.fpill[aria-pressed="true"]{background:var(--forest);color:#fff}
+.fpill[aria-pressed="true"] .thumb{background:rgba(255,255,255,.16)}
+.fpill .tag{
+  position:absolute;top:-8px;right:-6px;background:var(--blush-2);color:#6E4534;font-size:10.5px;
+  padding:2px 8px;border-radius:999px;
+}
+.ghostbtn{display:flex;align-items:center;gap:8px;height:44px;padding:0 18px;border-radius:999px;background:var(--white);box-shadow:var(--sh);font-size:14px}
+.ghostbtn:hover{background:var(--sage)}
+
+/* ---------- lot cards ---------- */
+.lots{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;align-items:start}
+.lot{
+  background:var(--white);border-radius:var(--r-lg);box-shadow:var(--sh);padding:14px 16px 18px;
+  text-align:left;width:100%;display:block;position:relative;transition:box-shadow .22s,transform .22s;
+}
+.lot:hover{box-shadow:var(--sh-lift);transform:translateY(-3px)}
+.lot[aria-selected="true"]{box-shadow:var(--sh-lift), inset 0 0 0 1.5px var(--forest);transform:translateY(-10px)}
+.lot-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;background:var(--white);border:1px solid var(--line);
+  border-radius:999px;padding:4px 11px;font-size:11.5px;box-shadow:0 3px 10px -6px rgba(40,32,26,.5)
+}
+.chip.warn{border-color:rgba(180,82,43,.35);color:var(--rust)}
+.thumb svg,.art svg,.rhead svg{width:100%;height:100%;display:block}
+#chart svg{display:block;overflow:visible}
+.lot-head{margin-top:15px}
+.lot-id{font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+.lot-mini{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--paper);border-radius:13px;padding:10px 12px;margin:13px 0 3px}
+.lot-mini span{display:block;font-size:10.5px;color:var(--muted);line-height:1.3}
+.lot-mini b{font-size:15px;font-weight:500;letter-spacing:-.02em}
+.lot-next{padding-right:46px;min-height:34px}
+.lot-name{font-size:16.5px;letter-spacing:-.02em;margin:3px 0 6px;padding-right:44px}
+.lot-recipe{color:var(--rust);font-size:14px}
+.stagebar{height:5px;border-radius:99px;background:var(--paper-2);margin:12px 0 7px;overflow:hidden}
+.stagebar i{display:block;height:100%;border-radius:99px;background:var(--forest);transition:width .5s}
+.lot-foot{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);gap:8px}
+.lot-btn{
+  position:absolute;right:16px;bottom:16px;width:38px;height:38px;border-radius:50%;background:var(--forest);
+  display:grid;place-items:center;color:#fff;box-shadow:0 8px 16px -8px rgba(18,57,50,.9)
+}
+.lot-btn:hover{background:var(--forest-2)}
+
+/* ---------- detail row ---------- */
+.detail{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-top:16px}
+.panel{background:var(--white);border-radius:var(--r-lg);box-shadow:var(--sh);padding:24px 26px}
+.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.board{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.seg{display:none;gap:5px;background:var(--paper);border-radius:999px;padding:4px;margin-bottom:14px}
+.seg button{flex:1;height:40px;border-radius:999px;font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px}
+.seg button[aria-selected="true"]{background:#fff;color:var(--ink);box-shadow:0 2px 6px -2px rgba(40,32,26,.28)}
+.col-head{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:10px;color:var(--muted)}
+.count{background:var(--paper-2);border-radius:999px;padding:1px 8px;font-size:11.5px;color:var(--ink)}
+.tcol{background:var(--paper);border-radius:var(--r-md);padding:12px;min-height:150px}
+.task{background:var(--white);border-radius:var(--r-sm);padding:11px 12px;box-shadow:0 1px 2px rgba(40,32,26,.05);margin-bottom:9px;display:flex;gap:10px;align-items:flex-start}
+.task:last-child{margin-bottom:0}
+.cbox{
+  width:19px;height:19px;border-radius:6px;border:1.6px solid rgba(29,30,27,.28);flex:none;margin-top:1px;
+  display:grid;place-items:center;background:#fff;transition:.16s
+}
+.cbox:hover{border-color:var(--forest)}
+.task.done .cbox{background:var(--forest);border-color:var(--forest)}
+.task.done .t-name{text-decoration:line-through;color:var(--muted)}
+.t-name{font-size:13.5px;line-height:1.35}
+.t-meta{font-size:11.5px;color:var(--muted);margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.who{width:20px;height:20px;border-radius:50%;background:var(--sage);display:grid;place-items:center;font-size:9.5px;color:var(--forest)}
+.keeptag{display:inline-flex;align-items:center;gap:4px;background:#FEF7C3;border-radius:5px;padding:1px 6px;font-size:10.5px;color:#6B5A11}
+.due-late{color:var(--rust)}
+.empty{font-size:12.5px;color:var(--muted);padding:10px 4px}
+
+/* recipe panel */
+.rchips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.rchip{border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12px;background:#fff;transition:.16s}
+.rchip[aria-pressed="true"]{background:var(--forest);color:#fff;border-color:var(--forest)}
+.rchip:hover{background:var(--sage)}
+.rhead{background:var(--forest);color:#fff;border-radius:var(--r-md);padding:16px 18px;margin-bottom:14px}
+.rhead h4{font-size:19px;margin-top:3px}
+.spec{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.spec:last-of-type{border-bottom:none}
+.spec dt{color:var(--muted);flex:none;max-width:44%}
+.spec dd{margin:0;text-align:right}
+.note{background:var(--paper);border-radius:var(--r-sm);padding:12px 14px;font-size:12.5px;color:#4C4A44;margin-top:12px}
+
+/* timeline */
+.tl{margin-top:18px}
+.tl-row{display:flex;gap:12px;font-size:12.5px;padding:7px 0}
+.tl-dot{width:9px;height:9px;border-radius:50%;background:var(--forest);margin-top:5px;flex:none;position:relative}
+.tl-row:not(:last-child) .tl-dot:after{content:"";position:absolute;left:3.5px;top:11px;width:1.5px;height:22px;background:var(--line)}
+.tl-row.future .tl-dot{background:var(--paper-2);border:1.5px solid var(--line)}
+.tl-row.future{color:var(--muted)}
+
+/* ---------- keep ---------- */
+.keepbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.syncbtn{display:flex;align-items:center;gap:9px;height:40px;padding:0 18px;border-radius:999px;background:var(--forest);color:#fff;font-size:13.5px}
+.syncbtn:hover{background:var(--forest-2)}
+.syncbtn[disabled]{opacity:.55;cursor:default}
+.keeps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.keepnote{border-radius:var(--r-md);padding:16px 17px;border:1px solid rgba(29,30,27,.07);position:relative}
+.keepnote h4{font-size:15px;margin-bottom:10px;letter-spacing:-.01em}
+.kitem{display:flex;gap:9px;align-items:flex-start;padding:5px 0;font-size:13px;line-height:1.35;text-align:left;width:100%}
+.kitem.done span{text-decoration:line-through;color:rgba(29,30,27,.45)}
+.kbox{width:17px;height:17px;border-radius:5px;border:1.6px solid rgba(29,30,27,.3);flex:none;margin-top:2px;display:grid;place-items:center;background:rgba(255,255,255,.5)}
+.kitem.done .kbox{background:var(--forest);border-color:var(--forest)}
+.keepfoot{font-size:11.5px;color:rgba(29,30,27,.5);margin-top:11px;padding-top:9px;border-top:1px solid rgba(29,30,27,.09)}
+
+/* ---------- planner ---------- */
+.plan-grid{display:grid;grid-template-columns:1fr 1.35fr;gap:16px}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px}
+.field input,.field select{
+  width:100%;height:42px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--paper);
+  padding:0 13px;outline:none;font-size:14px
+}
+.field input:focus,.field select:focus{border-color:var(--forest);background:#fff}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.result{background:var(--blush);border-radius:var(--r-md);padding:18px 20px;margin-top:6px;color:#4A3229}
+.result .big{font-size:34px;letter-spacing:-.03em;line-height:1.1;margin-top:2px}
+.result .sub{font-size:13px;color:#8C6A5B;margin-top:2px}
+.mini{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.mini div{background:rgba(255,255,255,.6);border-radius:var(--r-sm);padding:10px 12px}
+.mini b{display:block;font-size:17px;font-weight:500;letter-spacing:-.02em;margin-top:1px}
+.mini span{font-size:11.5px;color:#8C6A5B}
+
+.chartwrap{position:relative}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-top:10px;flex-wrap:wrap}
+.key{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:6px;vertical-align:-1px}
+
+/* table */
+.tablewrap{overflow-x:auto;margin-top:16px}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:760px}
+th{text-align:left;font-weight:400;color:var(--muted);font-size:12px;padding:0 12px 9px 0;border-bottom:1px solid var(--line)}
+td{padding:11px 12px 11px 0;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+td.num,th.num{text-align:right;padding-right:0}
+.tinput{width:78px;height:32px;border-radius:8px;border:1px solid var(--line);background:var(--paper);padding:0 9px;text-align:right;font-size:13px;outline:none}
+.tinput:focus{border-color:var(--forest);background:#fff}
+tfoot td{font-size:13.5px;border-top:1.5px solid var(--ink);border-bottom:none;padding-top:12px}
+.capacity{height:9px;border-radius:99px;background:var(--paper-2);overflow:hidden;margin-top:8px}
+.capacity i{display:block;height:100%;background:var(--forest);border-radius:99px;transition:width .4s}
+.capacity i.over{background:var(--rust)}
+
+/* ticker */
+.ticker{display:flex;align-items:center;gap:11px;background:var(--white);border-radius:999px;box-shadow:var(--sh);padding:11px 20px;font-size:13px;margin-top:16px}
+.ticker .who{width:22px;height:22px;font-size:10px}
+.foot{margin-top:34px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+
+.toast{
+  position:fixed;left:50%;bottom:calc(26px + env(safe-area-inset-bottom));transform:translate(-50%,20px);background:var(--forest);color:#fff;
+  padding:12px 22px;border-radius:999px;font-size:13.5px;box-shadow:0 18px 34px -14px rgba(18,57,50,.7);
+  opacity:0;pointer-events:none;transition:.28s;z-index:50;display:flex;align-items:center;gap:9px
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- data source / import ---------- */
+.srcchip{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 14px 0 12px;border-radius:999px;background:var(--white);box-shadow:var(--sh);font-size:13px;white-space:nowrap}
+.srcchip .sdot{width:8px;height:8px;border-radius:50%;background:var(--amber)}
+.srcchip.live .sdot{background:#3F9E6E}
+.srcchip:hover{background:var(--sage)}
+.scrim{position:fixed;inset:0;background:rgba(29,30,27,.34);display:none;z-index:60;padding:20px;overflow:auto}
+.scrim.on{display:grid;place-items:center}
+.dialog{background:var(--white);border-radius:var(--r-lg);box-shadow:var(--sh-lift);padding:24px 26px;width:min(640px,100%);max-height:calc(100vh - 40px);overflow:auto}
+.drop{display:block;border:1.5px dashed rgba(29,30,27,.25);border-radius:var(--r-md);padding:22px;text-align:center;background:var(--paper);margin-top:14px;font-size:13.5px;color:var(--muted);cursor:pointer}
+.drop.over{border-color:var(--forest);background:var(--sage)}
+.drop input{display:none}
+.drop .pick{display:inline-flex;align-items:center;height:38px;padding:0 16px;border-radius:999px;background:var(--forest);color:#fff;font-size:13.5px;margin-top:10px}
+.filelist{margin:14px 0 0;padding:0;list-style:none;font-size:13px}
+.filelist li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.filelist li span:last-child{color:var(--muted);text-align:right;flex:none;max-width:55%}
+.filelist li.bad span:last-child{color:var(--rust)}
+.dlg-foot{display:flex;justify-content:space-between;gap:10px;margin-top:18px;flex-wrap:wrap;align-items:center}
+.glog{margin-top:16px;background:var(--paper);border-radius:var(--r-md);padding:14px 16px}
+.glog .row2{margin-bottom:10px}
+.glog .field{margin-bottom:0}
+.glog .field input,.glog .field select{height:38px;background:#fff}
+.addtask{display:flex;gap:8px;margin-top:14px}
+.addtask input{flex:1;min-width:0;height:40px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--paper);padding:0 12px;outline:none;font-size:14px}
+.addtask input:focus{border-color:var(--forest);background:#fff}
+.addtask button{height:40px;padding:0 16px;border-radius:999px;background:var(--forest);color:#fff;font-size:13.5px;flex:none}
+.addtask button:hover{background:var(--forest-2)}
+
+@media (max-width:1080px){
+  .hero-grid,.detail,.plan-grid{grid-template-columns:1fr}
+  .lots{grid-template-columns:repeat(2,1fr)}
+  .keeps{grid-template-columns:repeat(2,1fr)}
+  .env{grid-template-columns:repeat(3,1fr)}
+  .hero .art{width:230px;opacity:.5}
+  .hero .body{max-width:100%}
+  .lot[aria-selected="true"]{transform:none}
+}
+
+/* one status column at a time, driven by the segmented control */
+@media (max-width:860px){
+  .board{grid-template-columns:1fr}
+  .seg{display:flex}
+  .board > .bcol{display:none}
+  .board > .bcol.active{display:block}
+  .col-head{display:none}
+  .tcol{min-height:0}
+}
+
+/* the crop plan becomes stacked records instead of a sideways-scrolling table */
+@media (max-width:700px){
+  #planTable{min-width:0}
+  #planTable thead{display:none}
+  #planTable tbody tr{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;padding:16px 0;border-bottom:1px solid var(--line)}
+  #planTable td{border:none;padding:0;font-size:12.5px;text-align:left}
+  #planTable td.c-name{grid-column:1/-1;font-size:15.5px}
+  #planTable td.c-sub{grid-column:1/-1;font-size:12px;margin-top:-5px}
+  #planTable td.num{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  #planTable td.num:before{content:attr(data-l);color:var(--muted)}
+  #planTable tfoot tr{display:block;padding-top:14px}
+  #planTable tfoot td{display:flex;justify-content:space-between;border:none;padding:4px 0}
+  #planTable tfoot td:empty{display:none}
+  #planTable tfoot td.num:before{content:attr(data-l);color:var(--muted);font-size:12.5px}
+  .tinput{width:96px;height:38px}
+}
+
+@media (max-width:640px){
+  .wrap{padding:14px 14px calc(44px + env(safe-area-inset-bottom))}
+  .display{font-size:29px}
+  .sec-title{font-size:21px}
+  .sec-head{margin:26px 0 13px;gap:12px}
+  .hero-grid,.detail,.plan-grid,.lots,.keeps{gap:12px}
+
+  /* header: identity on row one, navigation and search below */
+  .topbar{gap:10px 8px;margin-bottom:16px}
+  .brand{order:1}
+  .livechip{order:2;height:38px;padding:0 13px}
+  .user{order:3;margin-left:auto}
+  .navpills{order:4;flex-basis:100%;justify-content:space-between}
+  .search{order:5;flex-basis:100%;max-width:none;min-width:0}
+  .user .nm,.user .rl,.brand span,.cdate{display:none}
+
+  .lots,.keeps{grid-template-columns:1fr}
+  .env{grid-template-columns:repeat(2,1fr);gap:10px}
+  .env-tile{padding:13px 15px}
+  .env-tile:last-child{grid-column:1/-1}
+  .row2{grid-template-columns:repeat(2,1fr)}
+  .mini{grid-template-columns:repeat(3,1fr);gap:8px}
+  .mini div{padding:9px 10px}
+  .mini b{font-size:15px}
+
+  .hero{padding:24px 20px;min-height:auto}
+  .hero .art{display:block;width:168px;right:-18px;bottom:-16px;opacity:.34}
+  .side-card h3{max-width:64%}
+  .panel{padding:18px 16px}
+
+  /* 16px stops iOS zooming the page when a field takes focus */
+  .search input,.field input,.field select,.tinput,.addtask input{font-size:16px}
+  .field input,.field select{height:46px}
+
+  /* comfortable thumb targets */
+  .cbox{width:24px;height:24px;border-radius:7px}
+  .task{padding:13px 12px;gap:11px}
+  .t-name{font-size:14px}
+  .kitem{padding:9px 0;min-height:42px;align-items:center}
+  .kbox{width:21px;height:21px}
+  .lot-btn{width:42px;height:42px;right:14px;bottom:14px}
+  .fpill,.ghostbtn{height:46px}
+  .rchip{padding:8px 14px}
+
+  /* filters scroll sideways rather than wrapping into four rows */
+  .sec-head > .filters:first-of-type{
+    flex-wrap:nowrap;overflow-x:auto;width:100%;padding:8px 14px 8px 0;margin:0 -14px 0 0;
+    scrollbar-width:none;-webkit-overflow-scrolling:touch;
+  }
+  .sec-head > .filters:first-of-type::-webkit-scrollbar{display:none}
+  .sec-head > .filters:first-of-type .fpill{flex:none}
+
+  .ticker{border-radius:18px;align-items:flex-start;padding:13px 16px;line-height:1.4}
+  .ticker .who{flex:none;margin-top:1px}
+  .foot{flex-direction:column;gap:6px}
+  .toast{left:14px;right:14px;transform:translateY(20px);justify-content:center}
+  .toast.show{transform:translateY(0)}
+}
+
+@media (max-width:380px){
+  .display{font-size:26px}
+  .env,.mini,.row2{grid-template-columns:1fr}
+  .env-tile:last-child{grid-column:auto}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 21c0-7 3-11 8-13-1 8-4 11-8 13Z" fill="#fff"/><path d="M12 21C10 15 7 12 3 11c1 6 4 9 9 10Z" fill="#fff" opacity=".55"/></svg></span>
+      <span>Millcreek.</span>
+    </div>
+    <nav class="navpills" id="nav" aria-label="Sections"></nav>
+    <div class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#807D75" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="search" type="search" placeholder="Search a lot ID, crop or recipe" aria-label="Search lots">
+    </div>
+    <div class="livechip"><span class="dot"></span><span id="clock">—</span></div>
+    <button class="srcchip" id="srcBtn" aria-haspopup="dialog" aria-controls="dataScrim"><span class="sdot"></span><span id="srcLabel">Mock data</span></button>
+    <div class="user">
+      <span class="avatar">SP</span>
+      <div><div class="nm">Special Projects</div><div class="rl">Production &amp; Propagation</div></div>
+    </div>
+  </header>
+
+  <section class="hero-grid">
+    <div class="hero on-blush">
+      <div class="body">
+        <div class="label" id="heroLabel">Week 37 · fall stick window</div>
+        <h1 class="display" style="margin-top:8px" id="heroTitle">42,860 cuttings<br>on the bench</h1>
+        <div class="statpill"><span id="heroStatK">Strike rate, season to date</span><b id="heroStatV">91.4%</b></div>
+      </div>
+      <div class="body"><a class="link" href="#lots">Open the lot list</a></div>
+      <div class="art" id="heroArt" aria-hidden="true"></div>
+    </div>
+    <div class="side-col">
+      <div class="card side-card">
+        <div>
+          <div class="label">Coming up</div>
+          <h3 id="sideHead1">Echinacea moves to the cooler Nov 3</h3>
+        </div>
+        <a class="link" href="#planner">See the season plan</a>
+        <div class="art" id="sideArt1" aria-hidden="true"></div>
+      </div>
+      <div class="card side-card dark on-dark">
+        <div>
+          <div class="label">Needs attention</div>
+          <h3 id="lateHead">7 tasks are past due</h3>
+        </div>
+        <a class="link" href="#board">Open the task board</a>
+        <div class="art" id="sideArt2" aria-hidden="true"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="env" id="env" aria-label="Propagation house conditions"></section>
+
+  <section id="lots">
+    <div class="sec-head">
+      <div>
+        <h2 class="sec-title">Lots on the bench</h2>
+        <p class="sec-sub" id="lotCount">—</p>
+      </div>
+      <div class="filters" id="filters"></div>
+      <div class="filters">
+        <button class="ghostbtn" id="sortBtn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M7 12h10M10 17h4"/></svg>
+          <span id="sortLabel">Sort: next task</span>
+        </button>
+      </div>
+    </div>
+    <div class="lots" id="lotGrid"></div>
+  </section>
+
+  <section class="detail" id="board">
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="sec-title">Tasks</h2>
+          <p class="sec-sub" id="boardSub">—</p>
+        </div>
+        <div class="filters">
+          <button class="ghostbtn" id="scopeBtn" style="height:38px;font-size:13px">
+            <span id="scopeLabel">Showing: this lot</span>
+          </button>
+        </div>
+      </div>
+      <div class="seg" id="boardTabs" role="tablist" aria-label="Task status"></div>
+      <div class="board" id="taskBoard"></div>
+      <form class="addtask" id="addTask" autocomplete="off">
+        <input type="text" placeholder="Add a task for this lot" aria-label="New task" maxlength="140">
+        <button type="submit">Add</button>
+      </form>
+    </div>
+    <div class="panel">
+      <h2 class="sec-title" style="margin-bottom:12px">Recipe</h2>
+      <div class="rchips" id="recipeChips"></div>
+      <div id="recipeBody"></div>
+    </div>
+  </section>
+
+  <section id="keep" style="margin-top:16px">
+    <div class="panel">
+      <div class="keepbar">
+        <div>
+          <h2 class="sec-title">Google Keep lists</h2>
+          <p class="sec-sub" id="keepStatus">—</p>
+        </div>
+        <button class="syncbtn" id="syncBtn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20 11A8 8 0 0 0 6.3 5.8L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 13.7 5.2L20 16"/><path d="M20 20v-4h-4"/></svg>
+          <span id="syncLabel">Sync with Keep</span>
+        </button>
+      </div>
+      <div class="keeps" id="keepGrid"></div>
+    </div>
+  </section>
+
+  <section id="planner" style="margin-top:16px">
+    <div class="sec-head" style="margin-bottom:16px">
+      <div>
+        <h2 class="sec-title">Plan the propagation season</h2>
+        <p class="sec-sub">Work backwards from what sales needs on the truck.</p>
+      </div>
+    </div>
+    <div class="plan-grid">
+      <div class="panel">
+        <div class="label" style="margin-bottom:14px">Back-calculate a stick order</div>
+        <div class="field">
+          <label for="pCrop">Crop and program</label>
+          <select id="pCrop"></select>
+        </div>
+        <div class="field">
+          <label for="pTarget">Salable units needed</label>
+          <input id="pTarget" type="number" inputmode="numeric" min="0" step="100" value="9000">
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="pStrike">Expected strike %</label>
+            <input id="pStrike" type="number" inputmode="numeric" min="1" max="100" step="1" value="92">
+          </div>
+          <div class="field">
+            <label for="pShrink">Grow-on shrink %</label>
+            <input id="pShrink" type="number" inputmode="numeric" min="0" max="60" step="1" value="6">
+          </div>
+        </div>
+        <div class="field">
+          <label for="pShip">Ship week (ISO)</label>
+          <input id="pShip" type="number" inputmode="numeric" min="1" max="52" step="1" value="15">
+        </div>
+        <div class="result">
+          <div class="label" style="color:#8C6A5B">Cuttings to stick</div>
+          <div class="big" id="pOut">—</div>
+          <div class="sub" id="pOutSub">—</div>
+          <div class="mini">
+            <div><span>Trays</span><b id="pTrays">—</b></div>
+            <div><span>Prop bench</span><b id="pBench">—</b></div>
+            <div><span>Finish bench</span><b id="pFinish">—</b></div>
+          </div>
+        </div>
+        <div class="note" id="pNote">—</div>
+      </div>
+
+      <div class="panel chartwrap">
+        <div class="panel-head">
+          <div>
+            <div class="label">Sticks and divisions by month</div>
+            <h3 style="font-size:20px;margin-top:3px">2026–27 season shape</h3>
+          </div>
+          <div class="label" id="chartHint">Tap a month</div>
+        </div>
+        <div id="chart"></div>
+        <div class="legend">
+          <span><i class="key" style="background:var(--forest)"></i><span id="legendPlan">Planned</span></span>
+          <span><i class="key" style="background:var(--blush-2)"></i>Actual to date</span>
+          <span><i class="key" style="background:var(--amber)"></i>Bench capacity</span>
+        </div>
+        <div class="note" id="monthNote">The two stick windows are June–September for spring-finish perennials and January–February for annual cuttings and tissue-culture liners.</div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="panel-head">
+        <div>
+          <h3 class="sec-title" style="font-size:21px">Spring 2026 crop plan</h3>
+          <p class="sec-sub" id="planSub">Edit a target and the stick quantity, trays and bench space follow.</p>
+        </div>
+        <div style="min-width:220px">
+          <div class="label" id="capLabel">—</div>
+          <div class="capacity"><i id="capBar" style="width:0%"></i></div>
+        </div>
+      </div>
+      <div class="tablewrap">
+        <table id="planTable">
+          <thead>
+            <tr>
+              <th>Crop</th><th>Program</th><th>Method</th>
+              <th class="num">Target</th><th class="num">Strike</th><th class="num">To stick</th>
+              <th class="num">Trays</th><th class="num">Stick wk</th><th class="num">Pot-up wk</th><th class="num">Ship wk</th>
+            </tr>
+          </thead>
+          <tbody id="planBody"></tbody>
+          <tfoot id="planFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="ticker" id="ticker"><span class="who">—</span><span>—</span></div>
+
+  <div class="foot">
+    <span id="footNote">Mock data for design review. Nothing here writes to a live system yet.</span>
+    <span>Zone 6a/6b · Millcreek Gardens, Ohio</span>
+  </div>
+</div>
+
+<div class="scrim" id="dataScrim" role="dialog" aria-modal="true" aria-labelledby="dataTitle">
+  <div class="dialog">
+    <div class="panel-head" style="margin-bottom:6px">
+      <div><h2 class="sec-title" id="dataTitle">Data source</h2><p class="sec-sub" id="dataSub">—</p></div>
+      <button class="ghostbtn" id="dataClose" style="height:38px">Close</button>
+    </div>
+    <p style="font-size:13.5px;color:#4C4A44;margin:8px 0 0">Drop the CSV files the SBI exporters publish to Drive: <b>Inventory_PIT_*</b> (one per day, exported <code>-ByLocation -AsCsv</code>), <b>Inventory_Transaction_Log_*</b> and <b>Order_Allocation_ByShipDate_*</b>. They are read in this browser and never uploaded anywhere.</p>
+    <label class="drop" id="drop">Drag files here, or<br><span class="pick">Choose files</span><input type="file" id="fileIn" multiple accept=".csv,text/csv"></label>
+    <ul class="filelist" id="fileList"></ul>
+    <div class="dlg-foot">
+      <span class="label" id="dataNote"></span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="ghostbtn" id="useMock" style="height:38px">Use mock data</button>
+        <button class="ghostbtn" id="clearData" style="height:38px">Forget files</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span></span></div>
+<!-- sbi-adapter:start -->
+<script id="sbi-adapter">
+/* ============================================================
+   SBI export adapter
+   ------------------------------------------------------------
+   Reads the files the STP exporters publish to Google Drive
+   (FarhadKBaloch/STP → tools/) and turns them into this
+   dashboard's own shapes. Nothing here talks to SBI directly:
+   the exporters are the extraction layer, the Drive folders
+   are the raw-snapshot store, and this is the normalising
+   adapter that sits between that store and the UI.
+
+   Files it understands, detected by their column headers:
+     Inventory_PIT_<date>.csv          -ByLocation export: Product ID / Description /
+                                        Size / Location / Ready / In Stock / Committed /
+                                        Available / Date
+     Inventory_PIT_<date>.csv          default (aggregated) export: adds Locations /
+                                        Location Count / Off Crop Stock / Off Crop Cmt
+     Inventory_Transaction_Log_*.csv   sp_ExcelQuery_Inventory_TransactionLog aliases:
+                                        Date / txtProductID / memDescription / txtSize /
+                                        Text125 (type) / QtyPlanted / txtOrgQty / txtReason
+     Order_Allocation_ByShipDate_*.csv Order Number / Ship Date / Product / Description /
+                                        Qty Ordered / Allocated Qty / Size / Category /
+                                        Type / Completed / Ship Via
+
+   What SBI can and cannot say about propagation:
+     - It knows WHERE stock is and HOW MUCH: a product in location
+       0000 (production) or in a plug/liner size is a lot on the bench.
+     - It does not know the stage, recipe, strike rate or grower flags.
+       Those come from the grower store (see GROWER in the page script),
+       and this adapter leaves them null so the page can say "not logged"
+       rather than invent them.
+   ============================================================ */
+const SBI = (function () {
+  'use strict';
+
+  /* ---------- small utilities ---------- */
+  function clean(v) { return v == null ? '' : String(v).replace(/^﻿/, '').trim(); }
+  function num(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    var s = clean(v).replace(/[$,\s]/g, ''); if (!s) return 0;
+    var n = Number(s); return isFinite(n) ? n : 0;
+  }
+  // "9/8/2026 12:00:00 AM" (PowerShell Export-Csv), "2026-09-08 00:00:00", ISO → "YYYY-MM-DD"
+  function dayOf(v) {
+    var s = clean(v); if (!s) return '';
+    var iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (iso) return ymd(+iso[1], +iso[2], +iso[3]);
+    var us = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/); if (us) return ymd(+us[3], +us[1], +us[2]);
+    var p = Date.parse(s); if (isNaN(p)) return ''; var d = new Date(p);
+    return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
+  function ymd(y, m, d) { return y + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d); }
+  function toDate(day) { var p = day.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function daysBetween(a, b) { return Math.round((toDate(b) - toDate(a)) / 864e5); }
+  // ISO-8601 week number, which is what the planner's ship/stick weeks use.
+  function isoWeek(day) {
+    var d = toDate(day); d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    var w1 = new Date(d.getFullYear(), 0, 4);
+    return 1 + Math.round(((d - w1) / 864e5 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+  }
+
+  /* ---------- CSV (RFC 4180: quoted fields, embedded commas / quotes / newlines, BOM) ---------- */
+  function parseCsv(text) {
+    text = String(text).replace(/^﻿/, '');
+    var rows = [], row = [], field = '', i = 0, n = text.length, inQ = false;
+    while (i < n) {
+      var c = text[i];
+      if (inQ) {
+        if (c === '"') { if (text[i + 1] === '"') { field += '"'; i += 2; continue; } inQ = false; i++; continue; }
+        field += c; i++; continue;
+      }
+      if (c === '"') { inQ = true; i++; continue; }
+      if (c === ',') { row.push(field); field = ''; i++; continue; }
+      if (c === '\r') { i++; continue; }
+      if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+      field += c; i++;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    // drop fully blank trailing rows
+    while (rows.length && rows[rows.length - 1].every(function (x) { return clean(x) === ''; })) rows.pop();
+    return rows;
+  }
+  function index(hdr) { var ix = {}; hdr.forEach(function (h, i) { ix[clean(h)] = i; }); return ix; }
+  function has(ix, names) { for (var i = 0; i < names.length; i++) if (names[i] in ix) return true; return false; }
+
+  /* ---------- which export is this? (same rules STP's classifyKind_ uses) ---------- */
+  function classify(hdr) {
+    var ix = index(hdr);
+    if (has(ix, ['Product ID']) && has(ix, ['In Stock'])) return has(ix, ['Location']) ? 'pit-loc' : 'pit-agg';
+    if (has(ix, ['QtyPlanted', 'txtReason', 'txtOrgQty'])) return 'txn';
+    if (has(ix, ['Allocated Qty']) && has(ix, ['Ship Date']) && has(ix, ['Order Number'])) return 'open';
+    if (has(ix, ['OrdNum']) && has(ix, ['AllocQty'])) return 'sales';
+    return 'unknown';
+  }
+
+  /* ---------- sizes ---------- */
+  // A plug / liner size is written as a cell count: 72, 105-O, 128, 50, 288, 38 …
+  // Finished sizes carry a unit or a pot mark: #1, 3.5", 4.5 in, 1QT, Qt, PRO #1, 6", Each.
+  function cellsPerTray(size) {
+    var s = clean(size).toUpperCase();
+    if (!s) return null;
+    if (/["'#]|IN\b|INCH|QT|QUART|GAL|PRO|EACH|FLAT|PK/.test(s)) return null;
+    var m = s.match(/^(\d{2,4})(?:[-\s]?[A-Z]{0,3})?$/);
+    if (!m) return null;
+    var n = +m[1];
+    return n >= 18 && n <= 800 ? n : null;
+  }
+
+  /* ---------- categories ---------- */
+  // The dashboard's four filters vs whatever SBI calls the category. Keyword-matched
+  // on the category first and the description second; the raw value is kept so a
+  // product that lands in the wrong bucket is visible rather than silent.
+  function dashboardCat(sbiCategory, description) {
+    var c = clean(sbiCategory).toLowerCase(), d = clean(description).toLowerCase();
+    if (/herb/.test(c)) return 'herb';
+    if (/grass|carex|sedge/.test(c)) return 'grass';
+    if (/annual|stock/.test(c)) return 'annual';
+    if (/perennial/.test(c)) return 'perennial';
+    if (/thymus|origanum|rosmarinus|salvia officinalis|ocimum|mentha|allium schoeno|petroselinum|lavandula angustifolia 'hidcote'|basil|thyme|oregano|rosemary|mint|parsley|chive|sage\b/.test(d)) return 'herb';
+    if (/panicum|miscanthus|pennisetum|calamagrostis|schizachyrium|carex|festuca|sporobolus|andropogon|bouteloua|grass/.test(d)) return 'grass';
+    if (/calibrachoa|petunia|lantana|coleus|impatiens|begonia|verbena|scaevola|stock plant|\bstock\b/.test(d)) return 'annual';
+    return 'perennial';
+  }
+  var NON_PLANT = ['Hard Goods', 'Services', 'Discounts', 'Rack Kit', 'Custom', 'Default', '<Seasonal>', 'None', 'Supplies', 'Supply'];
+  function isPlantCategory(cat) {
+    var c = clean(cat); if (!c) return true;
+    for (var i = 0; i < NON_PLANT.length; i++) if (c.toLowerCase().indexOf(NON_PLANT[i].toLowerCase()) >= 0) return false;
+    return true;
+  }
+
+  /* ---------- Inventory_PIT_* ---------- */
+  // Returns one snapshot: { date, byLocation, rows:[{id, desc, size, loc, ready, stock, cmt, avl, off, offCmt}] }
+  // Catalog placeholder rows and the ~1,000,000-unit service sentinels are dropped
+  // (the exporter drops them by default; files made with -KeepCatalog / -KeepSentinel are
+  // handled here so either kind of file reads the same).
+  function parsePit(aoa, opts) {
+    opts = opts || {};
+    var sentinelMin = opts.sentinelMin || 900000;
+    var ix = index(aoa[0]);
+    if (!('Product ID' in ix) || !('In Stock' in ix)) throw new Error('Not a point-in-time inventory export: needs "Product ID" and "In Stock" columns');
+    var byLoc = 'Location' in ix;
+    var idI = ix['Product ID'], dI = ix['Description'], szI = ix['Size'], lI = ix['Location'], rI = ix['Ready'],
+        stI = ix['In Stock'], cmI = ix['Committed'], avI = ix['Available'], dtI = ix['Date'],
+        locsI = ix['Locations'], offI = ix['Off Crop Stock'] != null ? ix['Off Crop Stock'] : ix['Prod Stock'],
+        offCI = ix['Off Crop Cmt'] != null ? ix['Off Crop Cmt'] : ix['Prod Cmt'];
+    var rows = [], date = '';
+    for (var r = 1; r < aoa.length; r++) {
+      var row = aoa[r]; if (!row) continue;
+      var id = clean(row[idI]); if (!id) continue;
+      if (rI != null && clean(row[rI]).toUpperCase() === 'CATALOG') continue;
+      var stock = num(row[stI]); if (stock >= sentinelMin) continue;
+      var cmt = cmI != null ? num(row[cmI]) : 0;
+      if (!date && dtI != null) date = dayOf(row[dtI]);
+      rows.push({
+        id: id, desc: dI != null ? clean(row[dI]) : id, size: szI != null ? clean(row[szI]) : '',
+        loc: byLoc ? clean(row[lI]) : (locsI != null ? clean(row[locsI]) : ''),
+        ready: rI != null ? clean(row[rI]) : '',
+        stock: stock, cmt: cmt, avl: avI != null ? num(row[avI]) : stock - cmt,
+        off: offI != null ? num(row[offI]) : 0, offCmt: offCI != null ? num(row[offCI]) : 0
+      });
+    }
+    return { date: date, byLocation: byLoc, rows: rows };
+  }
+
+  /* ---------- Inventory_Transaction_Log_* ---------- */
+  // Every row is a delta except COUNT, which is an absolute recount (QtyPlanted = the new
+  // count, txtOrgQty = the old one), and Update, which is a comment edit — same reading
+  // STP applies. COUNT rows come back with their real change, Update rows are dropped.
+  function parseTxn(aoa) {
+    var ix = index(aoa[0]);
+    var dI = ix['Date'], idI = ix['txtProductID'], descI = ix['memDescription'], szI = ix['txtSize'], tI = ix['Text125'],
+        qI = ix['QtyPlanted'], oI = ix['txtOrgQty'], rI = ix['txtReason'], uI = ix['txtUser'], lI = ix['txtLocation'];
+    if (idI == null || tI == null || qI == null) throw new Error('Not an inventory transaction log: needs txtProductID, Text125 and QtyPlanted');
+    var events = [];
+    for (var r = 1; r < aoa.length; r++) {
+      var row = aoa[r]; if (!row) continue;
+      var type = clean(row[tI]); if (!type || type === 'Update') continue;
+      var id = clean(row[idI]); if (!id) continue;
+      var qty = num(row[qI]), org = oI != null ? num(row[oI]) : 0;
+      if (type === 'COUNT') { if (Math.abs(qty) >= 900000 || Math.abs(org) >= 900000) continue; qty = qty - org; }
+      events.push({
+        day: dI != null ? dayOf(row[dI]) : '', id: id, desc: descI != null ? clean(row[descI]) : id,
+        size: szI != null ? clean(row[szI]) : '', type: type, qty: qty,
+        reason: rI != null ? clean(row[rI]) : '', user: uI != null ? clean(row[uI]) : '', loc: lI != null ? clean(row[lI]) : ''
+      });
+    }
+    events.sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; });
+    return events;
+  }
+
+  /* ---------- Order_Allocation_ByShipDate_* ---------- */
+  // The forward order book: demand per product, plant categories only, open lines only.
+  function parseOpen(aoa) {
+    var ix = index(aoa[0]);
+    var ordI = ix['Order Number'], shI = ix['Ship Date'], custI = ix['Bill To Company'], pI = ix['Product'], dI = ix['Description'],
+        qoI = ix['Qty Ordered'], qaI = ix['Allocated Qty'], szI = ix['Size'], cI = ix['Category'], tI = ix['Type'], compI = ix['Completed'], svI = ix['Ship Via'];
+    if (pI == null || qaI == null || shI == null) throw new Error('Not an order allocation export: needs Product, Allocated Qty and Ship Date');
+    var prod = {};
+    for (var r = 1; r < aoa.length; r++) {
+      var row = aoa[r]; if (!row) continue;
+      var id = clean(row[pI]); if (!id) continue;
+      if (compI != null && num(row[compI]) === 1) continue;
+      var cat = cI != null ? clean(row[cI]) : ''; if (!isPlantCategory(cat)) continue;
+      var day = dayOf(row[shI]), qo = qoI != null ? num(row[qoI]) : 0, qa = num(row[qaI]);
+      var p = prod[id] || (prod[id] = { id: id, desc: dI != null ? clean(row[dI]) : id, size: szI != null ? clean(row[szI]) : '',
+        sbiCat: cat, type: tI != null ? clean(row[tI]) : '', cat: dashboardCat(cat, dI != null ? row[dI] : ''),
+        ordered: 0, alloc: 0, short: 0, firstShip: '', lastShip: '', orders: {}, customers: {} });
+      p.ordered += qo; p.alloc += qa; p.short += Math.max(qo - qa, 0);
+      if (day && (!p.firstShip || day < p.firstShip)) p.firstShip = day;
+      if (day && day > p.lastShip) p.lastShip = day;
+      if (ordI != null && clean(row[ordI])) p.orders[clean(row[ordI])] = 1;
+      if (custI != null && clean(row[custI])) p.customers[clean(row[custI])] = 1;
+    }
+    var out = [];
+    for (var k in prod) { var x = prod[k];
+      x.orders = Object.keys(x.orders).length; x.customers = Object.keys(x.customers).length;
+      x.shipWeek = x.firstShip ? isoWeek(x.firstShip) : null; out.push(x); }
+    out.sort(function (a, b) { return b.ordered - a.ordered; });
+    return out;
+  }
+
+  /* ---------- lots ---------- */
+  // A production row is stock that is not on the ground to sell yet: it sits in a
+  // production location (0000 by default — the same code the STP crop model excludes),
+  // or it is in a plug / liner size wherever it sits. LOST is not production.
+  var DEFAULTS = { productionLocations: ['0000'], ignoreLocations: ['LOST'] };
+  function isProductionRow(row, opts) {
+    var loc = clean(row.loc), o = opts || DEFAULTS;
+    if (matchLoc(loc, o.ignoreLocations || DEFAULTS.ignoreLocations)) return false;
+    if (matchLoc(loc, o.productionLocations || DEFAULTS.productionLocations)) return true;
+    return cellsPerTray(row.size) != null;
+  }
+  function matchLoc(loc, codes) {
+    loc = clean(loc); if (!loc) return false;
+    for (var i = 0; i < codes.length; i++) { var c = codes[i];
+      if (loc === c || loc.indexOf(c + '-') === 0 || loc.indexOf(c + ' ') === 0 || loc.indexOf(c + '/') === 0) return true; }
+    return false;
+  }
+  function lotKey(row, byLoc) { return byLoc ? row.id + '@' + clean(row.loc) : row.id; }
+  // Units of a row that count as "in production". By-location rows are all-or-nothing.
+  // Aggregated rows list their locations in one cell ('B13, 0000') and carry the off-crop
+  // slice as a separate column, so: a production location present → the off-crop units
+  // (which unavoidably include any LOST portion — prefer -ByLocation files); a plug size
+  // in any non-ignored location → the whole stock; otherwise nothing.
+  function productionUnits(row, byLoc, opts) {
+    var o = opts || DEFAULTS;
+    if (byLoc) return isProductionRow(row, o) ? row.stock : 0;
+    var locs = clean(row.loc).split(',').map(clean).filter(Boolean);
+    var ign = o.ignoreLocations || DEFAULTS.ignoreLocations, prodL = o.productionLocations || DEFAULTS.productionLocations;
+    var inProd = locs.some(function (l) { return matchLoc(l, prodL); });
+    var live = locs.filter(function (l) { return !matchLoc(l, ign); });
+    if (inProd && row.off > 0) return row.off;
+    if (cellsPerTray(row.size) != null && (live.length || !locs.length)) return row.stock;
+    return 0;
+  }
+
+  // snapshots: parsePit() results (any order, any mix of by-location and aggregated —
+  // by-location is preferred, aggregated files fall back to the Off Crop columns).
+  // events: parseTxn() output (optional). demand: parseOpen() output (optional, gives categories).
+  function buildLots(snapshots, events, demand, opts) {
+    opts = Object.assign({}, DEFAULTS, opts || {});
+    events = events || []; demand = demand || [];
+    var snaps = snapshots.filter(function (s) { return s && s.date; }).slice()
+      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+    // one file per date: if both kinds exist for a date keep the by-location one
+    var byDate = {}; snaps.forEach(function (s) { if (!byDate[s.date] || s.byLocation) byDate[s.date] = s; });
+    var dates = Object.keys(byDate).sort();
+    if (!dates.length) return { lots: [], asOf: '', snapshotDates: [], summary: null };
+    var latest = byDate[dates[dates.length - 1]];
+
+    // product dictionary from the order book (carries Category / Type, which PIT lacks)
+    var dict = {}; demand.forEach(function (p) { dict[p.id] = p; });
+    var descIndex = {}; demand.forEach(function (p) { if (p.desc) descIndex[p.desc.toLowerCase()] = p; });
+
+    // per-key stock history across every snapshot, for "on bench since" and rises
+    var hist = {};
+    dates.forEach(function (d) {
+      var s = byDate[d];
+      s.rows.forEach(function (row) {
+        var units = productionUnits(row, s.byLocation, opts); if (units <= 0) return;
+        (hist[lotKey(row, s.byLocation)] || (hist[lotKey(row, s.byLocation)] = {}))[d] = units;
+      });
+    });
+
+    // losses per product from the log
+    var lossBy = {}, lastTxn = {}, tinBy = {};
+    events.forEach(function (e) {
+      if (e.type === 'LOSS' || e.type === 'DUMP') lossBy[e.id] = (lossBy[e.id] || 0) + Math.abs(e.qty);
+      if (e.type === 'TIN' && e.qty > 0) { var t = tinBy[e.id] || (tinBy[e.id] = { qty: 0, first: '', last: '' });
+        t.qty += e.qty; if (!t.first || e.day < t.first) t.first = e.day; if (e.day > t.last) t.last = e.day; }
+      if (!lastTxn[e.id] || e.day >= lastTxn[e.id].day) lastTxn[e.id] = e;
+    });
+
+    var lots = [], seen = {};
+    latest.rows.forEach(function (row) {
+      var units = productionUnits(row, latest.byLocation, opts); if (units <= 0) return;
+      var key = lotKey(row, latest.byLocation); if (seen[key]) return; seen[key] = 1;
+      var cell = cellsPerTray(row.size) || 1;
+      // on bench since: walk back through consecutive snapshots while the lot had stock
+      var since = latest.date, h = hist[key] || {};
+      for (var i = dates.length - 1; i >= 0; i--) { if ((h[dates[i]] || 0) > 0) since = dates[i]; else break; }
+      // a transfer-in in the log is the better "stuck" date when it precedes the first snapshot
+      var tin = tinBy[row.id]; if (tin && tin.first && tin.first < since && daysBetween(tin.first, since) <= 21) since = tin.first;
+      var lastRise = ''; for (var j = dates.length - 1; j >= 1; j--) { if ((h[dates[j]] || 0) > (h[dates[j - 1]] || 0)) { lastRise = dates[j]; break; } }
+      var d = dict[row.id] || descIndex[(row.desc || '').toLowerCase()] || null;
+      var sbiCat = d ? d.sbiCat : '';
+      lots.push({
+        id: key, pid: row.id, crop: row.desc || row.id, size: row.size, cat: dashboardCat(sbiCat, row.desc), sbiCat: sbiCat,
+        type: d ? d.type : '', bench: latest.byLocation ? (clean(row.loc) || 'No location') : (clean(row.loc) || 'Off-crop'),
+        units: units, cmt: row.cmt, cell: cell, trays: cell > 1 ? Math.ceil(units / cell) : 0,
+        since: since, daysOn: daysBetween(since, latest.date), lastRise: lastRise,
+        losses: lossBy[row.id] || 0, lastTxn: lastTxn[row.id] ? { day: lastTxn[row.id].day, type: lastTxn[row.id].type, qty: lastTxn[row.id].qty, reason: lastTxn[row.id].reason } : null,
+        source: 'sbi', inProductionLocation: matchLoc(row.loc, opts.productionLocations),
+        // grower knowledge — SBI does not hold these; the page fills them from its own store
+        stage: null, recipe: null, strike: null, vern: null, flag: false, finish: '', stuck: since
+      });
+    });
+    lots.sort(function (a, b) { return b.units - a.units; });
+    var summary = {
+      asOf: latest.date, lots: lots.length, units: lots.reduce(function (s, l) { return s + l.units; }, 0),
+      trays: lots.reduce(function (s, l) { return s + l.trays; }, 0),
+      losses: lots.reduce(function (s, l) { return s + l.losses; }, 0),
+      byCat: lots.reduce(function (m, l) { m[l.cat] = (m[l.cat] || 0) + 1; return m; }, {}),
+      snapshots: dates.length, firstSnapshot: dates[0], byLocation: latest.byLocation
+    };
+    return { lots: lots, asOf: latest.date, snapshotDates: dates, summary: summary };
+  }
+
+  /* ---------- season actuals ---------- */
+  // Month-by-month units that ENTERED production, measured as day-over-day rises on
+  // production rows across the snapshots (the same rise ledger STP uses for "Planted").
+  // Needs daily snapshots to be exact — a rise is net of same-day loss, and a weekly gap
+  // nets a week of sticking against a week of dumping. Returns thousands per month for
+  // the twelve months of the given year plus what the snapshots actually covered.
+  function buildSeasonActual(snapshots, opts, year) {
+    opts = Object.assign({}, DEFAULTS, opts || {});
+    var snaps = snapshots.filter(function (s) { return s && s.date; }).slice()
+      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+    var byDate = {}; snaps.forEach(function (s) { if (!byDate[s.date] || s.byLocation) byDate[s.date] = s; });
+    var dates = Object.keys(byDate).sort();
+    var months = [], i; for (i = 0; i < 12; i++) months.push(0);
+    if (dates.length < 2) return { months: months, unitsByMonth: months.slice(), coverage: { from: dates[0] || '', to: dates[dates.length - 1] || '', snapshots: dates.length, daily: false } };
+    year = year || +dates[dates.length - 1].slice(0, 4);
+    var prev = null, gaps = [];
+    dates.forEach(function (d) {
+      var s = byDate[d], cur = {};
+      s.rows.forEach(function (row) { var u = productionUnits(row, s.byLocation, opts); if (u > 0) { var k = lotKey(row, s.byLocation); cur[k] = (cur[k] || 0) + u; } });
+      if (prev) {
+        gaps.push(daysBetween(prev.date, d));
+        var rise = 0; for (var k in cur) { var up = cur[k] - (prev.map[k] || 0); if (up > 0) rise += up; }
+        if (+d.slice(0, 4) === year) months[+d.slice(5, 7) - 1] += rise;
+      }
+      prev = { date: d, map: cur };
+    });
+    var maxGap = Math.max.apply(null, gaps);
+    return { months: months.map(function (u) { return Math.round(u / 100) / 10; }), unitsByMonth: months,
+      coverage: { from: dates[0], to: dates[dates.length - 1], snapshots: dates.length, daily: maxGap <= 1, maxGapDays: maxGap } };
+  }
+
+  /* ---------- the one call the page makes ---------- */
+  // files: [{name, text}] → everything the page needs, plus per-file notes for the import panel.
+  function ingest(files, opts) {
+    var snapshots = [], events = [], demand = [], report = [];
+    files.forEach(function (f) {
+      var aoa; try { aoa = parseCsv(f.text); } catch (e) { report.push({ name: f.name, kind: 'error', note: e.message }); return; }
+      if (!aoa.length || aoa.length < 2) { report.push({ name: f.name, kind: 'empty', note: 'No data rows' }); return; }
+      var kind = classify(aoa[0]);
+      try {
+        if (kind === 'pit-loc' || kind === 'pit-agg') { var s = parsePit(aoa, opts); if (!s.date) s.date = dateFromName(f.name); snapshots.push(s);
+          report.push({ name: f.name, kind: kind, date: s.date, rows: s.rows.length, note: (kind === 'pit-loc' ? 'Inventory by location' : 'Inventory, aggregated') + ' · ' + s.date }); }
+        else if (kind === 'txn') { var ev = parseTxn(aoa); events = events.concat(ev); report.push({ name: f.name, kind: kind, rows: ev.length, note: 'Transaction log · ' + ev.length + ' movements' }); }
+        else if (kind === 'open') { var dm = parseOpen(aoa); demand = mergeDemand(demand, dm); report.push({ name: f.name, kind: kind, rows: dm.length, note: 'Open order book · ' + dm.length + ' products' }); }
+        else if (kind === 'sales') report.push({ name: f.name, kind: kind, note: 'Sales detail — not used by this dashboard' });
+        else report.push({ name: f.name, kind: 'unknown', note: 'Columns not recognised: ' + aoa[0].slice(0, 6).map(clean).join(', ') });
+      } catch (e) { report.push({ name: f.name, kind: 'error', note: e.message }); }
+    });
+    var built = buildLots(snapshots, events, demand, opts);
+    var season = buildSeasonActual(snapshots, opts);
+    return { lots: built.lots, asOf: built.asOf, summary: built.summary, snapshotDates: built.snapshotDates,
+      events: events, demand: demand, season: season, report: report };
+  }
+  function mergeDemand(a, b) {
+    var m = {}; a.concat(b).forEach(function (p) {
+      var x = m[p.id]; if (!x) { m[p.id] = Object.assign({}, p); return; }
+      x.ordered += p.ordered; x.alloc += p.alloc; x.short += p.short; x.orders += p.orders; x.customers += p.customers;
+      if (p.firstShip && (!x.firstShip || p.firstShip < x.firstShip)) { x.firstShip = p.firstShip; x.shipWeek = p.shipWeek; }
+      if (p.lastShip > x.lastShip) x.lastShip = p.lastShip; });
+    var out = []; for (var k in m) out.push(m[k]); out.sort(function (p, q) { return q.ordered - p.ordered; }); return out;
+  }
+  function dateFromName(name) { var m = String(name || '').match(/(\d{4}-\d{2}-\d{2})/); return m ? m[1] : ''; }
+
+  return { parseCsv: parseCsv, classify: classify, parsePit: parsePit, parseTxn: parseTxn, parseOpen: parseOpen,
+    buildLots: buildLots, buildSeasonActual: buildSeasonActual, ingest: ingest,
+    cellsPerTray: cellsPerTray, dashboardCat: dashboardCat, isPlantCategory: isPlantCategory, isProductionRow: isProductionRow, productionUnits: productionUnits,
+    dayOf: dayOf, isoWeek: isoWeek, num: num, clean: clean, DEFAULTS: DEFAULTS };
+})();
+if (typeof module !== 'undefined' && module.exports) module.exports = SBI;
+</script>
+<!-- sbi-adapter:end -->
+<script>
+/* ============================================================
+   Millcreek Gardens — Production & Propagation dashboard
+   Mock data for design review, or SBI exports via the adapter above.
+   ============================================================ */
+
+/* ---------- plant illustrations ---------- */
+const G = { dark:'#24503E', mid:'#3B7359', light:'#5E9679', pale:'#8FB8A1',
+            pot:'#E4DCD0', potDark:'#CFC3B2', terra:'#C97B52', terraDark:'#AC6440',
+            bloom:'#9E85BE', bloom2:'#CE7E96', bloom3:'#E9C46A' };
+
+function potShape(fill, dark){
+  return `<path d="M62 150h76l-9 40a10 10 0 0 1-10 8H81a10 10 0 0 1-10-8Z" fill="${fill}"/>
+          <path d="M58 141h84a5 5 0 0 1 5 5v4a5 5 0 0 1-5 5H58a5 5 0 0 1-5-5v-4a5 5 0 0 1 5-5Z" fill="${dark}"/>`;
+}
+
+const ART = {
+  mound: `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="100" cy="106" rx="58" ry="44" fill="${G.mid}"/>
+    <ellipse cx="78" cy="98" rx="34" ry="28" fill="${G.light}"/>
+    <ellipse cx="124" cy="112" rx="30" ry="24" fill="${G.dark}"/>
+    <g fill="${G.bloom}"><circle cx="70" cy="76" r="5"/><circle cx="104" cy="66" r="6"/><circle cx="132" cy="82" r="5"/><circle cx="88" cy="88" r="4"/><circle cx="146" cy="102" r="4"/><circle cx="58" cy="104" r="4"/></g>
+    ${potShape(G.pot, G.potDark)}</svg>`,
+
+  spike: `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <g stroke="${G.mid}" stroke-width="4" stroke-linecap="round" fill="none">
+      <path d="M100 150V54"/><path d="M100 128 74 62"/><path d="M100 132l28-64"/></g>
+    <g fill="${G.bloom}">
+      <path d="M100 40c7 6 8 18 0 26-8-8-7-20 0-26Z"/><path d="M74 48c7 6 8 18 0 26-8-8-7-20 0-26Z"/><path d="M128 54c7 6 8 18 0 26-8-8-7-20 0-26Z"/></g>
+    <g fill="${G.dark}"><ellipse cx="82" cy="128" rx="17" ry="7" transform="rotate(-18 82 128)"/><ellipse cx="120" cy="134" rx="17" ry="7" transform="rotate(16 120 134)"/><ellipse cx="88" cy="146" rx="14" ry="6" transform="rotate(-8 88 146)"/></g>
+    ${potShape(G.pot, G.potDark)}</svg>`,
+
+  grass: `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <g fill="none" stroke-linecap="round">
+      <path d="M100 150C86 118 70 92 44 74" stroke="${G.mid}" stroke-width="5"/>
+      <path d="M100 150C96 112 92 82 84 52" stroke="${G.light}" stroke-width="5"/>
+      <path d="M100 150c8-36 16-62 30-88" stroke="${G.dark}" stroke-width="5"/>
+      <path d="M100 150c18-26 36-44 58-56" stroke="${G.mid}" stroke-width="5"/>
+      <path d="M100 150c-4-30-14-52-30-70" stroke="${G.pale}" stroke-width="4"/></g>
+    ${potShape(G.terra, G.terraDark)}</svg>`,
+
+  broad: `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <g stroke="${G.dark}" stroke-width="3" fill="none"><path d="M100 150 62 96M100 150l38-52M100 150V78M100 150 76 116M100 150l28-14"/></g>
+    <ellipse cx="58" cy="90" rx="26" ry="18" fill="${G.mid}" transform="rotate(-28 58 90)"/>
+    <ellipse cx="142" cy="92" rx="26" ry="18" fill="${G.mid}" transform="rotate(28 142 92)"/>
+    <ellipse cx="100" cy="70" rx="24" ry="19" fill="${G.light}"/>
+    <ellipse cx="70" cy="124" rx="24" ry="15" fill="${G.dark}" transform="rotate(-14 70 124)"/>
+    <ellipse cx="132" cy="126" rx="24" ry="15" fill="${G.dark}" transform="rotate(14 132 126)"/>
+    ${potShape(G.pot, G.potDark)}</svg>`,
+
+  herb: `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <g stroke="${G.mid}" stroke-width="3.5" fill="none" stroke-linecap="round">
+      <path d="M100 150V62"/><path d="M100 120 70 78"/><path d="M100 112l32-40"/><path d="M100 138 74 116"/><path d="M100 132l30-18"/></g>
+    <g fill="${G.light}"><circle cx="70" cy="76" r="7"/><circle cx="132" cy="70" r="7"/><circle cx="100" cy="58" r="8"/><circle cx="74" cy="114" r="6"/><circle cx="130" cy="112" r="6"/><circle cx="86" cy="94" r="6"/><circle cx="116" cy="92" r="6"/></g>
+    <g fill="${G.bloom}"><circle cx="100" cy="42" r="5"/><circle cx="78" cy="60" r="4"/><circle cx="124" cy="54" r="4"/></g>
+    ${potShape(G.terra, G.terraDark)}</svg>`,
+
+  tray: `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <path d="M34 128h132l-12 44H46Z" fill="${G.potDark}"/>
+    <path d="M30 112h140l-6 22H36Z" fill="${G.pot}"/>
+    <g fill="${G.mid}">
+      ${[0,1,2,3,4,5].map(i=>`<circle cx="${46+i*22}" cy="${104}" r="7"/>`).join('')}
+      ${[0,1,2,3,4].map(i=>`<circle cx="${58+i*22}" cy="${86}" r="6"/>`).join('')}
+    </g>
+    <g stroke="${G.dark}" stroke-width="2.5" fill="none">
+      ${[0,1,2,3,4,5].map(i=>`<path d="M${46+i*22} 112v-8"/>`).join('')}
+    </g>
+    <g fill="${G.light}">${[0,1,2,3].map(i=>`<circle cx="${70+i*22}" cy="70" r="5"/>`).join('')}</g></svg>`
+};
+
+/* ---------- data ---------- */
+const STAGES = ['Stick','Callus','Rooting','Weaning','Pot-up','Grow-on','Ship-ready'];
+
+const RECIPES = {
+  'R-05':{name:'Sedum group — dry stick', media:'60% bark / 30% peat / 10% perlite, pH 6.0', tray:'72-cell, 1.5 in', hormone:'None',
+    stick:'1 tip cutting per cell, 2 in', water:'Hand-water in, no mist', heat:'Ambient bench, 68 °F', callus:'2–3 days', root:'10–14 days',
+    wean:'Not required', feed:'75 ppm N at visible root', pinch:'Day 18, single pinch', pgr:'None', potup:'Week 3 to #1',
+    note:'The commonest loss here is over-misting. Keep this crop on the dry bench, away from the Nepeta lines.'},
+  'R-08':{name:'Culinary herb — soft tip', media:'70% peat / 30% perlite, pH 5.8', tray:'105-cell, 1.25 in', hormone:'K-IBA 500 ppm, 3-sec basal dip',
+    stick:'1 cutting per cell, strip lower third', water:'Mist 5 s every 15 min, 7am–7pm', heat:'Bottom heat 70 °F', callus:'4–6 days', root:'14–18 days',
+    wean:'Step mist down over 4 days', feed:'100 ppm N constant liquid feed', pinch:'Day 20', pgr:'None — food crop', potup:'Week 4 to 4.5 in',
+    note:'No PGRs and no non-labelled chemistry on anything sold as culinary. Keep the herb bench physically separated from PGR drench zones.'},
+  'R-11':{name:'Annual stock plant — hold and cut', media:'Peat-lite with 90-day control release', tray:'#1 stock pot', hormone:'n/a',
+    stick:'Stock held for winter cutting harvest', water:'Drip, dry down between', heat:'House at 62 °F night', callus:'n/a', root:'n/a',
+    wean:'n/a', feed:'150 ppm N, 20-10-20 alternating with cal-mag', pinch:'Soft pinch every 3 weeks to build breaks', pgr:'None on stock',
+    potup:'First cutting harvest week 1', note:'Stock quality decides the whole annual program. Scout weekly for thrips and whitefly; a clean stock house is cheaper than a spray program in January.'},
+  'R-14':{name:'Softwood mist — Nepeta and Salvia group', media:'70% peat / 30% perlite, pH 5.8', tray:'72-cell, 1.5 in',
+    hormone:'K-IBA 1,000 ppm, 5-sec basal dip', stick:'1 two-node cutting per cell', water:'Mist 6 s every 12 min, 7am–7pm',
+    heat:'Bottom heat 72 °F', callus:'5–7 days', root:'18–21 days', wean:'Step mist down over 5 days', feed:'100 ppm N at first root',
+    pinch:'Day 24, above node 2', pgr:'None in prop', potup:'Week 4 to #1',
+    note:'Botrytis on the lower leaf is the main risk after day 10. Pull the mist back as soon as callus is uniform and get air moving overnight.'},
+  'R-17':{name:'Perennial seed plug', media:'Fine germination mix, pH 5.6', tray:'128-cell plug', hormone:'n/a',
+    stick:'Sown 1–2 seed per cell, lightly covered', water:'Keep saturated through stage 1, dry down in stage 2',
+    heat:'Germination chamber 70 °F, then 65 °F bench', callus:'n/a', root:'Stage 3 by day 21', wean:'Move to unheated bay at true leaf 3',
+    feed:'50 ppm N stage 2, 100 ppm stage 3', pinch:'None', pgr:'A-Rest only if stretch shows', potup:'Week 6 to #1',
+    note:'Genetic integrity matters on named seed strains. Log the seed lot number against this production lot at sowing, not afterwards.'},
+  'R-22':{name:'Lavender — low-humidity fog', media:'50% peat / 50% perlite, pH 6.5', tray:'72-cell, 1.5 in',
+    hormone:'K-IBA 1,500 ppm, 5-sec dip', stick:'Semi-ripe tip, no soft growth', water:'Fog only, target 85% RH, no standing water',
+    heat:'Bottom heat 72 °F, air 62 °F night', callus:'7–10 days', root:'24–30 days', wean:'Move to open bay at 60% root',
+    feed:'75 ppm N, low ammonium', pinch:'Day 30, light', pgr:'None', potup:'Week 5 to #1',
+    note:'Lavender rots before it roots if you treat it like Nepeta. Higher perlite, fog not mist, and keep the bench moving air.'},
+  'R-26':{name:'Woody herb — semi-hardwood', media:'40% peat / 60% perlite, pH 6.2', tray:'72-cell, 2 in',
+    hormone:'K-IBA 2,000 ppm, 10-sec dip', stick:'Semi-hardwood, wounded base', water:'Mist 5 s every 18 min, daylight only',
+    heat:'Bottom heat 75 °F', callus:'12–16 days', root:'35–45 days', wean:'Step down over 10 days', feed:'75 ppm N after root',
+    pinch:'Day 45', pgr:'None', potup:'Week 8 to #1',
+    note:'Long and slow. Do not judge this recipe before day 30 — the current lot sitting at 64% is still inside its normal window.'},
+  'R-31':{name:'Tissue-culture liner grow-on', media:'Peat-lite with 60-day control release', tray:'50-cell liner', hormone:'n/a',
+    stick:'Liners received and planted within 24 h', water:'Overhead, dry down between', heat:'House at 65 °F', callus:'n/a',
+    root:'Rooted through by day 21', wean:'Acclimate under 40% shade for 5 days', feed:'125 ppm N constant liquid feed',
+    pinch:'None', pgr:'None', potup:'Week 5 to #1',
+    note:'Unbox and plant same day. Log the TC lab lot on arrival so any trueness-to-type issue traces back cleanly.'},
+  'R-40':{name:'Field division', media:'Standard #1 mix with 6-month control release', tray:'#1 container', hormone:'n/a',
+    stick:'2–3 eye divisions, crown at soil line', water:'Irrigate in heavily, then normal cycle', heat:'Outdoor bed',
+    callus:'n/a', root:'Established by week 5', wean:'n/a', feed:'Control release only', pinch:'None', pgr:'None',
+    potup:'Direct to finish container', note:'Divide on a cool overcast day. Divisions potted above 85 °F show the highest loss rate in our records.'}
+};
+
+const MOCK_LOTS = [
+  {id:'26-0417', crop:"Nepeta 'Cat's Pajamas'", cat:'perennial', recipe:'R-14', stage:2, stuck:'Aug 14', trays:96, cell:72, units:6912, strike:94, art:'mound', bench:'Prop 2 · Bay C', finish:'#1 · spring 26', vern:'None'},
+  {id:'26-0402', crop:"Salvia nemorosa 'Caradonna'", cat:'perennial', recipe:'R-14', stage:3, stuck:'Aug 6', trays:72, cell:72, units:5184, strike:91, art:'spike', bench:'Prop 2 · Bay A', finish:'#1 · spring 26', vern:'8 wks at 38 °F'},
+  {id:'26-0388', crop:"Lavandula 'Munstead'", cat:'perennial', recipe:'R-22', stage:1, stuck:'Aug 28', trays:60, cell:72, units:4320, strike:78, art:'herb', bench:'Prop 1 · fog bay', finish:'#1 · spring 26', vern:'6 wks at 40 °F'},
+  {id:'26-0355', crop:"Heuchera 'Obsidian'", cat:'perennial', recipe:'R-31', stage:4, stuck:'Jul 22', trays:48, cell:50, units:2400, strike:97, art:'broad', bench:'House 4 · Bay B', finish:'#1 · spring 26', vern:'None'},
+  {id:'26-0431', crop:"Thymus 'German Winter'", cat:'herb', recipe:'R-08', stage:0, stuck:'Sep 8', trays:40, cell:105, units:4200, strike:0, art:'herb', bench:'Prop 3 · Bay A', finish:'4.5 in · spring 26', vern:'None'},
+  {id:'26-0290', crop:"Panicum virgatum 'Northwind'", cat:'grass', recipe:'R-40', stage:5, stuck:'Jun 12', trays:0, cell:1, units:900, strike:99, art:'grass', bench:'Yard 6 · rows 12–14', finish:'#1 · spring 26', vern:'Natural, outdoors'},
+  {id:'26-0376', crop:"Echinacea purpurea 'Magnus'", cat:'perennial', recipe:'R-17', stage:5, stuck:'Jul 3', trays:36, cell:128, units:4608, strike:88, art:'spike', bench:'House 3 · Bay D', finish:'#1 · spring 26', vern:'10 wks at 36–40 °F'},
+  {id:'26-0409', crop:"Sedum 'Autumn Joy'", cat:'perennial', recipe:'R-05', stage:2, stuck:'Aug 20', trays:54, cell:72, units:3888, strike:98, art:'mound', bench:'Prop 1 · dry bench', finish:'#1 · spring 26', vern:'None'},
+  {id:'26-0362', crop:"Rosmarinus 'Arp'", cat:'herb', recipe:'R-26', stage:1, stuck:'Aug 25', trays:36, cell:72, units:2592, strike:64, art:'herb', bench:'Prop 3 · Bay C', finish:'4.5 in · spring 26', vern:'None', flag:true},
+  {id:'26-0344', crop:"Rudbeckia 'Goldsturm'", cat:'perennial', recipe:'R-40', stage:6, stuck:'May 30', trays:0, cell:1, units:1240, strike:96, art:'mound', bench:'Yard 4 · rows 3–6', finish:'#1 · fall 26', vern:'Natural, outdoors'},
+  {id:'26-0425', crop:"Origanum vulgare 'Greek'", cat:'herb', recipe:'R-08', stage:0, stuck:'Sep 5', trays:30, cell:105, units:3150, strike:0, art:'herb', bench:'Prop 3 · Bay B', finish:'4.5 in · spring 26', vern:'None'},
+  {id:'26-0398', crop:"Perovskia 'Denim n Lace'", cat:'perennial', recipe:'R-14', stage:3, stuck:'Aug 11', trays:66, cell:72, units:4752, strike:89, art:'spike', bench:'Prop 2 · Bay B', finish:'#1 · spring 26', vern:'None'},
+  {id:'26-0448', crop:"Calibrachoa 'Superbells' stock", cat:'annual', recipe:'R-11', stage:5, stuck:'Jun 26', trays:0, cell:1, units:640, strike:99, art:'mound', bench:'House 1 · stock', finish:'Cuttings from wk 1', vern:'None'},
+  {id:'26-0451', crop:"Lantana 'Bandana Cherry' stock", cat:'annual', recipe:'R-11', stage:5, stuck:'Jul 8', trays:0, cell:1, units:480, strike:98, art:'spike', bench:'House 1 · stock', finish:'Cuttings from wk 3', vern:'None'}
+];
+
+const MOCK_TASKS = [
+  {id:'t1', lot:'26-0417', name:'Rooting audit — pull 20 cells, log strike', status:'todo', due:'Today', late:false, who:'MR', keep:'prop-daily'},
+  {id:'t2', lot:'26-0417', name:'Step mist to 6 s / 16 min', status:'doing', due:'Today', late:false, who:'JL', keep:'prop-daily'},
+  {id:'t3', lot:'26-0417', name:'Sticky card count — Bay C', status:'done', due:'Yesterday', late:false, who:'MR', keep:'prop-daily'},
+  {id:'t4', lot:'26-0417', name:'Stick 6,912 — 96 trays', status:'done', due:'Aug 14', late:false, who:'Crew', keep:null},
+  {id:'t5', lot:'26-0402', name:'First pinch above node 2', status:'todo', due:'Thu', late:false, who:'JL', keep:'bump-up'},
+  {id:'t6', lot:'26-0402', name:'Move to weaning bay', status:'doing', due:'Today', late:false, who:'Crew', keep:'prop-daily'},
+  {id:'t7', lot:'26-0402', name:'Callus check day 6', status:'done', due:'Aug 12', late:false, who:'MR', keep:null},
+  {id:'t8', lot:'26-0388', name:'Bench temp probe recalibration — fog bay', status:'todo', due:'2 days ago', late:true, who:'DT', keep:'prop-daily'},
+  {id:'t9', lot:'26-0388', name:'Drop RH set point to 85%', status:'done', due:'Sep 2', late:false, who:'DT', keep:null},
+  {id:'t10', lot:'26-0355', name:'Bump 2,400 liners to #1', status:'todo', due:'Thu', late:false, who:'Crew', keep:'bump-up'},
+  {id:'t11', lot:'26-0355', name:'Pull shade to 40% for acclimation', status:'done', due:'Aug 30', late:false, who:'JL', keep:null},
+  {id:'t12', lot:'26-0431', name:'Stick 4,200 cuttings — 40 trays', status:'doing', due:'Today', late:false, who:'Crew', keep:'prop-daily'},
+  {id:'t13', lot:'26-0431', name:'Mix R-08 media — 40 tray batch', status:'done', due:'Yesterday', late:false, who:'DT', keep:null},
+  {id:'t14', lot:'26-0431', name:'Print lot tags and bench card', status:'todo', due:'Today', late:false, who:'AK', keep:'order-receive'},
+  {id:'t15', lot:'26-0290', name:'Space pots to 18 in centres', status:'todo', due:'3 days ago', late:true, who:'Crew', keep:'bump-up'},
+  {id:'t16', lot:'26-0290', name:'Grade for fall ship list', status:'todo', due:'Sep 22', late:false, who:'AK', keep:null},
+  {id:'t17', lot:'26-0376', name:'Book cooler space for vernalization', status:'todo', due:'Oct 20', late:false, who:'SP', keep:'spring-plan'},
+  {id:'t18', lot:'26-0376', name:'Switch to 100 ppm N stage 3', status:'done', due:'Aug 18', late:false, who:'JL', keep:null},
+  {id:'t19', lot:'26-0409', name:'First pinch', status:'todo', due:'Fri', late:false, who:'JL', keep:'bump-up'},
+  {id:'t20', lot:'26-0409', name:'Move off dry bench to grow-on', status:'todo', due:'Sep 15', late:false, who:'Crew', keep:null},
+  {id:'t21', lot:'26-0362', name:'Strike below target — review recipe R-26 with growers', status:'todo', due:'Yesterday', late:true, who:'SP', keep:'prop-daily'},
+  {id:'t22', lot:'26-0362', name:'Re-wound and re-dip the 6 weakest trays', status:'doing', due:'Today', late:false, who:'MR', keep:null},
+  {id:'t23', lot:'26-0344', name:'Grade and tag for the Ohio Valley run', status:'doing', due:'Today', late:false, who:'AK', keep:'bump-up'},
+  {id:'t24', lot:'26-0344', name:'Confirm count with shipping — 1,240', status:'todo', due:'Today', late:false, who:'AK', keep:'order-receive'},
+  {id:'t25', lot:'26-0425', name:'Finish sticking — 12 trays left', status:'doing', due:'Today', late:false, who:'Crew', keep:'prop-daily'},
+  {id:'t26', lot:'26-0398', name:'Feed switch to 100 ppm N', status:'todo', due:'2 days ago', late:true, who:'JL', keep:'prop-daily'},
+  {id:'t27', lot:'26-0398', name:'Weaning day 3 — mist down', status:'done', due:'Sep 7', late:false, who:'MR', keep:null},
+  {id:'t28', lot:'26-0448', name:'Soft pinch stock to build breaks', status:'todo', due:'Mon', late:false, who:'JL', keep:'bump-up'},
+  {id:'t29', lot:'26-0448', name:'Thrips scout — stock house', status:'todo', due:'Yesterday', late:true, who:'DT', keep:'prop-daily'},
+  {id:'t30', lot:'26-0451', name:'Cut-back for winter cutting frame', status:'todo', due:'Sep 18', late:false, who:'Crew', keep:null},
+  {id:'t31', lot:'26-0451', name:'Confirm cutting harvest schedule with sales', status:'todo', due:'Oct 1', late:false, who:'SP', keep:'spring-plan'}
+];
+
+const KEEP_LISTS = [
+  {id:'prop-daily', title:'Prop house — daily', color:'#FDF3C0', extra:[
+    {t:'Walk all four bays before the mist starts', done:true},
+    {t:'Log bench temps in the shared sheet', done:false}]},
+  {id:'bump-up', title:'Bump-up line — this week', color:'#DCEBE0', extra:[
+    {t:'Pull 300 empty #1 pots from the yard', done:true}]},
+  {id:'spring-plan', title:'Spring 26 planning', color:'#E7E2F5', extra:[
+    {t:'Send Nepeta and Salvia counts to sales by Oct 3', done:false},
+    {t:'Ask the TC lab for Heuchera liner availability', done:false},
+    {t:'Reserve cooler bays 2 and 3 for vernalization', done:false}]},
+  {id:'order-receive', title:'Order and receive', color:'#FADFD3', extra:[
+    {t:'K-IBA — reorder before the January annual run', done:false},
+    {t:'72-cell trays: 400 short for the fall stick', done:false},
+    {t:'Tags for the spring 26 perennial program', done:true}]}
+];
+
+const MOCK_SEASON = [
+  {m:'Jan', plan:22, act:24, crops:'Annual cuttings from stock, TC liner arrivals'},
+  {m:'Feb', plan:34, act:31, crops:'Peak annual cutting harvest, Heuchera liners'},
+  {m:'Mar', plan:18, act:19, crops:'Late annual sticks, first bump-up wave'},
+  {m:'Apr', plan:6,  act:5,  crops:'Spring rush — propagation is quiet by design'},
+  {m:'May', plan:8,  act:9,  crops:'Field divisions start, Rudbeckia and Panicum'},
+  {m:'Jun', plan:26, act:28, crops:'Field division continues, first perennial softwood'},
+  {m:'Jul', plan:31, act:30, crops:'Echinacea plug sowing, Heuchera TC liners in'},
+  {m:'Aug', plan:44, act:42, crops:'Heaviest window — Nepeta, Salvia, Sedum, Perovskia, Lavandula'},
+  {m:'Sep', plan:38, act:17, crops:'Herb sticks, tail of the perennial softwood window'},
+  {m:'Oct', plan:12, act:0,  crops:'Cleanup sticks, cooler loading begins'},
+  {m:'Nov', plan:4,  act:0,  crops:'Vernalization moves, houses buttoned up'},
+  {m:'Dec', plan:15, act:0,  crops:'Stock plant cut-back, first annual cuttings'}
+];
+const CAPACITY = 40;
+
+const MOCK_PLAN = [
+  {crop:"Nepeta 'Cat's Pajamas'", prog:'#1 spring', method:'Tip cutting · R-14', target:9000,  strike:92, shrink:6, cell:72, prop:5, grow:22, ship:15, vern:false, pot:0.45},
+  {crop:"Salvia 'Caradonna'",      prog:'#1 spring', method:'Tip cutting · R-14', target:12000, strike:90, shrink:6, cell:72, prop:5, grow:23, ship:14, vern:true, pot:0.45},
+  {crop:"Lavandula 'Munstead'",    prog:'#1 spring', method:'Semi-ripe · R-22',  target:7500,  strike:76, shrink:9, cell:72, prop:7, grow:24, ship:16, vern:true, pot:0.45},
+  {crop:"Echinacea 'Magnus'",      prog:'#1 spring', method:'Seed plug · R-17',  target:14000, strike:86, shrink:7, cell:128,prop:8, grow:26, ship:17, vern:true, pot:0.45},
+  {crop:"Heuchera 'Obsidian'",     prog:'#1 spring', method:'TC liner · R-31',   target:6000,  strike:96, shrink:5, cell:50, prop:4, grow:22, ship:16, vern:false, pot:0.45},
+  {crop:"Thymus 'German Winter'",  prog:'4.5 in herb',method:'Soft tip · R-08',  target:18000, strike:88, shrink:5, cell:105,prop:5, grow:18, ship:13, vern:false, pot:0.16},
+  {crop:"Panicum 'Northwind'",     prog:'#1 spring', method:'Division · R-40',   target:5200,  strike:97, shrink:4, cell:1,  prop:0, grow:32, ship:18, vern:false, pot:0.45},
+  {crop:"Sedum 'Autumn Joy'",      prog:'#1 spring', method:'Dry stick · R-05',  target:8000,  strike:97, shrink:4, cell:72, prop:3, grow:22, ship:15, vern:false, pot:0.45}
+];
+const BENCH_SQFT = 36000;   // available finishing bench for the spring program
+const TRAY_SQFT = 1.9;      // 1020 tray plus working space
+const POT_SQFT = 0.45;      // default #1 container, spaced
+
+/* ---------- data sources ----------
+   Two halves feed this page. SBI (via the STP exporters) knows where stock is and how
+   much: that becomes the lot list, the units, the trays, the days on bench and the
+   demand side of the planner. The grower knows the stage, the recipe, the strike rate
+   and what needs attention: that lives in the GROWER store below, in this browser.
+   Nothing on the page invents a value SBI does not hold; it says "not logged" instead. */
+const MOCK = { lots: MOCK_LOTS, tasks: MOCK_TASKS, season: MOCK_SEASON, plan: MOCK_PLAN, ref: new Date(2026,8,10) };
+let LOTS = MOCK.lots, TASKS = MOCK.tasks, SEASON = MOCK.season, PLAN = MOCK.plan, REF = MOCK.ref;
+let SRC = { kind:'mock', asOf:'', files:0, report:[], summary:null, events:[], demand:[], season:null };
+
+const store = {
+  get(k, d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ return false; } },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+};
+const KEYS = { grower:'mg-prop-grower-v1', tasks:'mg-prop-tasks-v1', sbi:'mg-prop-sbi-v1', src:'mg-prop-src-v1' };
+
+/* grower store: what SBI cannot know about a lot */
+const GROWER = store.get(KEYS.grower, {});
+function applyGrower(lots){
+  lots.forEach(l=>{
+    if(l.source!=='sbi') return;
+    const g=GROWER[l.id]||{};
+    l.stage = g.stage==null ? null : +g.stage;
+    l.recipe = g.recipe||null;
+    l.strike = g.strike==null||g.strike==='' ? null : +g.strike;
+    l.vern = g.vern||''; l.flag = !!g.flag; l.finish = g.finish||'';
+  });
+}
+function saveGrower(id, patch){
+  GROWER[id] = {...(GROWER[id]||{}), ...patch};
+  if(!store.set(KEYS.grower, GROWER)) toast('Could not save in this browser');
+  applyGrower(LOTS);
+}
+
+/* ---------- state ---------- */
+let state = { cat:'all', q:'', sort:'task', lot:'26-0417', recipe:null, scope:'lot', section:'overview', mcol:'todo' };
+const $ = s => document.querySelector(s);
+const el = (t,c,h) => { const n=document.createElement(t); if(c)n.className=c; if(h!==undefined)n.innerHTML=h; return n; };
+const fmt = n => n.toLocaleString('en-US');
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const niceDay = iso => { if(!iso) return '—'; const p=iso.split('-'); return MONTHS[+p[1]-1]+' '+(+p[2]); };
+// mock lots carry 'Aug 14' strings and a fixed reference day; SBI lots carry an ISO date and a
+// day count measured at ingest against the snapshot date
+const daysOn = l => l.daysOn!=null ? l.daysOn : Math.max(0, Math.round((REF - new Date(l.stuck+', 2026'))/864e5));
+const sinceLabel = l => l.source==='sbi' ? niceDay(l.since) : l.stuck;
+const currentLot = () => LOTS.find(l=>l.id===state.lot) || LOTS[0] || null;
+
+function toast(msg){
+  const t=$('#toast'); t.querySelector('span').textContent=msg; t.classList.add('show');
+  clearTimeout(t._x); t._x=setTimeout(()=>t.classList.remove('show'),2400);
+}
+
+/* ---------- top bar ---------- */
+const NAV = [
+  {id:'overview', label:'Overview', target:null, icon:'<circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><circle cx="8" cy="16" r="3"/><circle cx="16" cy="16" r="3"/>'},
+  {id:'prop', label:'Propagation', target:'#lots', icon:'<path d="M6 3v9M18 3v9M6 12a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM18 12a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/>'},
+  {id:'tasks', label:'Tasks', target:'#board', icon:'<path d="M4 6h16M4 12h16M4 18h9"/>'},
+  {id:'keep', label:'Keep', target:'#keep', icon:'<path d="M6 2h12a2 2 0 0 1 2 2v13l-8 7-8-7V4a2 2 0 0 1 2-2Z"/>'},
+  {id:'plan', label:'Season plan', target:'#planner', icon:'<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/>'}
+];
+function renderNav(){
+  const n=$('#nav'); n.innerHTML='';
+  NAV.forEach(item=>{
+    const b=el('button','navpill',`<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${item.icon}</svg>`);
+    b.setAttribute('aria-pressed', state.section===item.id);
+    b.title=item.label; b.setAttribute('aria-label',item.label);
+    b.onclick=()=>{ state.section=item.id; renderNav(); if(item.target) document.querySelector(item.target).scrollIntoView({behavior:'smooth',block:'start'});
+      else window.scrollTo({top:0,behavior:'smooth'}); };
+    n.appendChild(b);
+  });
+}
+function renderSourceChip(){
+  const b=$('#srcBtn');
+  b.classList.toggle('live', SRC.kind==='sbi');
+  $('#srcLabel').textContent = SRC.kind==='sbi' ? `SBI · as of ${niceDay(SRC.asOf)}` : 'Mock data';
+  b.title = SRC.kind==='sbi' ? `${SRC.files} export file${SRC.files===1?'':'s'} loaded` : 'Fabricated data for design review — click to load SBI exports';
+}
+
+/* ---------- hero ---------- */
+function loggedStrike(){
+  const withStrike=LOTS.filter(l=>l.strike!=null && l.strike>0);
+  if(!withStrike.length) return null;
+  const units=withStrike.reduce((s,l)=>s+l.units,0);
+  return units ? withStrike.reduce((s,l)=>s+l.strike*l.units,0)/units : null;
+}
+function renderHero(){
+  if(SRC.kind!=='sbi'){
+    $('#heroLabel').textContent='Week 37 · fall stick window';
+    $('#heroTitle').innerHTML='42,860 cuttings<br>on the bench';
+    $('#heroStatK').textContent='Strike rate, season to date'; $('#heroStatV').textContent='91.4%';
+    $('#sideHead1').textContent='Echinacea moves to the cooler Nov 3';
+    return;
+  }
+  const s=SRC.summary||{lots:0,units:0,trays:0};
+  $('#heroLabel').textContent=`Week ${SBI.isoWeek(SRC.asOf)} · inventory as of ${niceDay(SRC.asOf)}`;
+  $('#heroTitle').innerHTML=`${fmt(s.units)} units<br>in production`;
+  const sr=loggedStrike(), n=LOTS.filter(l=>l.strike!=null&&l.strike>0).length;
+  $('#heroStatK').textContent = sr==null ? 'Strike rate' : `Strike rate, ${n} of ${LOTS.length} lots logged`;
+  $('#heroStatV').textContent = sr==null ? 'not logged yet' : sr.toFixed(1)+'%';
+  const d=SRC.demand||[];
+  if(d.length){
+    const first=d.filter(x=>x.shipWeek).sort((a,b)=>a.firstShip<b.firstShip?-1:1)[0];
+    $('#sideHead1').textContent = first ? `${d.length} products booked · first ship ${niceDay(first.firstShip)}` : `${d.length} products on the open order book`;
+  } else $('#sideHead1').textContent='Load an order book to see what sales needs';
+}
+
+/* ---------- environment strip ---------- */
+// Sensor readings are not in SBI and no sensor feed is connected yet, so the strip
+// shows fabricated conditions only in mock mode. With SBI data it shows what the
+// exports can actually say.
+const ENV = [
+  {k:'Bench temperature', v:()=>(71.4+Math.random()*1.4).toFixed(1), u:'°F', note:'Target 72 · Prop 2'},
+  {k:'Relative humidity', v:()=>(86+Math.random()*3).toFixed(0), u:'%', note:'Fog bay holding'},
+  {k:'Mist cycle', v:()=>'6', u:'s / 12 min', note:'Zone 3 ran short twice', warn:true},
+  {k:'Daily light integral', v:()=>(5.8+Math.random()*0.8).toFixed(1), u:'mol', note:'Under 40% shade'},
+  {k:'Rooting audits due', v:()=>'4', u:'lots', note:'Two are past their window', warn:true}
+];
+function envTiles(){
+  if(SRC.kind!=='sbi') return ENV;
+  const s=SRC.summary||{}, sea=SRC.season||{coverage:{}}, cov=sea.coverage||{};
+  const unlogged=LOTS.filter(l=>l.stage==null).length;
+  return [
+    {k:'Units in production', v:()=>fmt(s.units||0), u:'', note:`${s.lots||0} lots · ${s.byLocation?'by location':'aggregated file'}`},
+    {k:'Trays on the bench', v:()=>fmt(s.trays||0), u:'', note:'Plug and liner sizes only'},
+    {k:'Losses in loaded logs', v:()=>fmt(s.losses||0), u:'units', note: SRC.events.length?'LOSS + DUMP on production lots':'No transaction log loaded', warn: !!(s.losses)},
+    {k:'Snapshots loaded', v:()=>String(cov.snapshots||0), u:cov.snapshots===1?'day':'days', note: cov.from ? `${niceDay(cov.from)} → ${niceDay(cov.to)}${cov.daily?'':' · gaps'}` : 'Load Inventory_PIT_ files'},
+    {k:'Stage not logged', v:()=>String(unlogged), u:'lots', note: unlogged?'Set it in the recipe panel':'Every lot has a stage', warn: unlogged>0}
+  ];
+}
+function renderEnv(){
+  const c=$('#env'); c.innerHTML='';
+  envTiles().forEach(e=>{
+    const t=el('div','env-tile');
+    t.innerHTML=`<div class="label">${e.k}</div>
+      <div class="v">${e.v()}<small> ${e.u}</small></div>
+      <div class="trend${e.warn?' warn':''}">${e.note}</div>`;
+    c.appendChild(t);
+  });
+}
+
+/* ---------- filters ---------- */
+const CATS=[
+  {id:'all', label:'All', art:null},
+  {id:'perennial', label:'Perennials', art:'mound'},
+  {id:'herb', label:'Herbs', art:'herb'},
+  {id:'grass', label:'Grasses', art:'grass'},
+  {id:'annual', label:'Annuals', art:'spike', tag:'Stock'}
+];
+function renderFilters(){
+  const f=$('#filters'); f.innerHTML='';
+  CATS.forEach(c=>{
+    const n = c.id==='all' ? LOTS.length : LOTS.filter(l=>l.cat===c.id).length;
+    const b=el('button', c.art?'fpill':'fpill plain');
+    b.innerHTML = (c.art?`<span class="thumb">${ART[c.art]}</span>`:'') + `${c.label} <span style="opacity:.55;margin-left:6px">${n}</span>` + (c.tag?`<span class="tag">${c.tag}</span>`:'');
+    b.setAttribute('aria-pressed', state.cat===c.id);
+    b.onclick=()=>{ state.cat=c.id; renderFilters(); renderLots(); };
+    f.appendChild(b);
+  });
+}
+
+/* ---------- lot grid ---------- */
+function lotTasks(id){ return TASKS.filter(t=>t.lot===id); }
+function nextTask(id){
+  const open=lotTasks(id).filter(t=>t.status!=='done');
+  open.sort((a,b)=> (b.late?1:0)-(a.late?1:0));
+  return open[0]||null;
+}
+function recipeName(code){ return code && RECIPES[code] ? RECIPES[code].name : ''; }
+function visibleLots(){
+  let out=LOTS.filter(l=>state.cat==='all'||l.cat===state.cat);
+  if(state.q){
+    const q=state.q.toLowerCase();
+    out=out.filter(l=>(l.id+' '+l.crop+' '+(l.recipe||'')+' '+recipeName(l.recipe)+' '+l.bench+' '+(l.size||'')).toLowerCase().includes(q));
+  }
+  if(state.sort==='task') out.sort((a,b)=>{
+    const A=nextTask(a.id),B=nextTask(b.id);
+    return ((B&&B.late?1:0)-(A&&A.late?1:0)) || ((a.stage==null?99:a.stage)-(b.stage==null?99:b.stage)) || (b.units-a.units);
+  });
+  if(state.sort==='id') out.sort((a,b)=>a.id.localeCompare(b.id));
+  if(state.sort==='strike') out.sort((a,b)=>(a.strike==null?101:a.strike)-(b.strike==null?101:b.strike));
+  return out;
+}
+function strikeChip(l){
+  if(l.strike==null) return SRC.kind==='sbi' ? 'strike not logged' : 'sticking now';
+  return l.strike ? l.strike+'% struck' : 'sticking now';
+}
+function renderLots(){
+  const g=$('#lotGrid'); g.innerHTML='';
+  const list=visibleLots();
+  const openTasks=TASKS.filter(t=>t.status!=='done').length;
+  $('#lotCount').textContent=`${list.length} of ${LOTS.length} lots · ${openTasks} open tasks · ${fmt(LOTS.reduce((s,l)=>s+l.units,0))} units in production`;
+  if(!LOTS.length){ g.appendChild(el('div','empty', SRC.kind==='sbi' ? 'No production stock in the loaded snapshots. Lots are stock in location 0000 or in a plug or liner size — check the location codes in the import panel.' : 'No lots.')); return; }
+  if(!list.length){ g.appendChild(el('div','empty','No lot matches that search. Try a lot number, a cultivar, a size or a recipe code.')); return; }
+  list.forEach(l=>{
+    const nt=nextTask(l.id);
+    const b=el('button','lot');
+    b.setAttribute('aria-selected', state.lot===l.id);
+    const foot = l.source==='sbi'
+      ? `${esc(l.bench)}${l.size?' · '+esc(l.size):''}${l.losses?' · '+fmt(l.losses)+' lost':''}`
+      : `${esc(l.bench)}${l.cell>1?' · '+l.cell+'-cell':''}`;
+    b.innerHTML=`
+      <div class="lot-top">
+        <span class="chip${l.flag?' warn':''}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21c0-7 3-11 8-13-1 8-4 11-8 13Z"/></svg>
+          ${strikeChip(l)}
+        </span>
+        <span class="lot-id">${l.stage==null?'stage not logged':STAGES[l.stage]}</span>
+      </div>
+      <div class="lot-head">
+        <div class="lot-id">${l.source==='sbi'?esc(l.pid):'Lot '+esc(l.id)}</div>
+        <div class="lot-name">${esc(l.crop)}</div>
+        <div class="lot-recipe">${l.recipe ? esc(l.recipe)+' · '+esc(recipeName(l.recipe).split('—')[0].trim()) : 'No recipe assigned'}</div>
+      </div>
+      <div class="lot-mini">
+        <div><span>On bench</span><b>${daysOn(l)} d</b></div>
+        <div><span>${l.trays?'Trays':'Grown'}</span><b>${l.trays?fmt(l.trays):'Field'}</b></div>
+        <div><span>Units</span><b>${fmt(l.units)}</b></div>
+      </div>
+      <div class="stagebar"><i style="width:${l.stage==null?0:(l.stage+1)/STAGES.length*100}%"></i></div>
+      <div class="lot-foot"><span>${foot}</span></div>
+      <div class="lot-foot lot-next" style="margin-top:5px">
+        <span class="${nt&&nt.late?'due-late':''}">${nt?(nt.late?'Overdue: ':'Next: ')+esc(nt.name.split('—')[0].trim()):'Nothing outstanding'}</span>
+      </div>
+      <span class="lot-btn" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+      </span>`;
+    b.onclick=()=>{ state.lot=l.id; state.recipe=null; renderLots(); renderBoard(); renderRecipe(); };
+    g.appendChild(b);
+  });
+}
+
+/* ---------- task board ---------- */
+const COLS=[{k:'todo',t:'To do'},{k:'doing',t:'In progress'},{k:'done',t:'Done'}];
+function boardTasks(){
+  return state.scope==='lot' ? TASKS.filter(t=>t.lot===state.lot) : TASKS.slice();
+}
+function persistTasks(){ if(SRC.kind==='sbi') store.set(KEYS.tasks, TASKS); }
+function renderBoard(){
+  const lot=currentLot();
+  const set=boardTasks();
+  const late=TASKS.filter(t=>t.late&&t.status!=='done').length;
+  $('#lateHead').textContent = late===1 ? '1 task is past due' : `${late} tasks are past due`;
+  $('#boardSub').textContent = state.scope==='lot'
+    ? (lot ? `${lot.source==='sbi'?lot.pid:'Lot '+lot.id} · ${lot.crop} · ${lot.bench}` : 'No lot selected')
+    : `All lots · ${set.filter(t=>t.status!=='done').length} open, ${late} past due`;
+  const tabs=$('#boardTabs'); tabs.innerHTML='';
+  COLS.forEach(c=>{
+    const n=set.filter(t=>t.status===c.k).length;
+    const tb=el('button',null,`${c.t}<span class="count">${n}</span>`);
+    tb.setAttribute('role','tab'); tb.setAttribute('aria-selected', state.mcol===c.k);
+    tb.onclick=()=>{ state.mcol=c.k; renderBoard(); };
+    tabs.appendChild(tb);
+  });
+  const b=$('#taskBoard'); b.innerHTML='';
+  COLS.forEach(c=>{
+    const items=set.filter(t=>t.status===c.k);
+    const col=el('div','bcol'+(state.mcol===c.k?' active':''));
+    col.innerHTML=`<div class="col-head">${c.t}<span class="count">${items.length}</span></div>`;
+    const box=el('div','tcol');
+    if(!items.length) box.appendChild(el('div','empty', c.k==='done'?'Nothing checked off yet.':'Clear.'));
+    items.forEach(t=>{
+      const card=el('div','task'+(t.status==='done'?' done':''));
+      const lotTag = state.scope==='all' ? `<span>${esc(t.lot)}</span>` : '';
+      card.innerHTML=`
+        <button class="cbox" aria-label="${t.status==='done'?'Reopen':'Complete'} ${esc(t.name)}">
+          ${t.status==='done'?'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="m5 13 5 5L19 7"/></svg>':''}
+        </button>
+        <div style="flex:1">
+          <div class="t-name">${esc(t.name)}</div>
+          <div class="t-meta">
+            <span class="who">${esc(t.who)}</span>
+            <span class="${t.late&&t.status!=='done'?'due-late':''}">${esc(t.due)}</span>
+            ${lotTag}
+            ${t.keep?`<span class="keeptag">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h12a2 2 0 0 1 2 2v13l-8 7-8-7V4a2 2 0 0 1 2-2Z"/></svg>
+              Keep</span>`:''}
+          </div>
+        </div>`;
+      card.querySelector('.cbox').onclick=()=>toggleTask(t.id);
+      box.appendChild(card);
+    });
+    col.appendChild(box); b.appendChild(col);
+  });
+  const f=$('#addTask'); f.style.display = lot ? 'flex' : 'none';
+  f.querySelector('input').placeholder = lot ? `Add a task for ${lot.source==='sbi'?lot.pid:'lot '+lot.id}` : '';
+}
+function toggleTask(id){
+  const t=TASKS.find(x=>x.id===id);
+  if(t.status==='done'){ t.status='todo'; }
+  else { t.status='done'; t.late=false; }
+  persistTasks();
+  renderBoard(); renderLots(); renderKeep();
+  toast(t.keep
+    ? (t.status==='done' ? 'Checked off and pushed to Keep' : 'Reopened and unchecked in Keep')
+    : (t.status==='done' ? 'Task checked off' : 'Task reopened'));
+}
+$('#addTask').onsubmit=e=>{
+  e.preventDefault();
+  const inp=e.target.querySelector('input'), name=inp.value.trim(), lot=currentLot();
+  if(!name||!lot) return;
+  TASKS.push({id:'u'+Date.now().toString(36), lot:lot.id, name, status:'todo', due:niceDay(new Date().toISOString().slice(0,10)), late:false, who:'You', keep:null});
+  inp.value=''; persistTasks(); state.mcol='todo'; renderBoard(); renderLots(); toast('Task added');
+};
+
+/* ---------- recipe + grower log ---------- */
+function renderRecipe(){
+  const lot=currentLot();
+  const code=state.recipe||(lot&&lot.recipe)||Object.keys(RECIPES)[0];
+  const r=RECIPES[code];
+  const chips=$('#recipeChips'); chips.innerHTML='';
+  Object.keys(RECIPES).forEach(k=>{
+    const c=el('button','rchip',k);
+    c.setAttribute('aria-pressed', k===code);
+    c.title=RECIPES[k].name;
+    c.onclick=()=>{ state.recipe=k; renderRecipe(); };
+    chips.appendChild(c);
+  });
+  const rows=[
+    ['Media', r.media],['Container', r.tray],['Hormone', r.hormone],['Sticking', r.stick],
+    ['Water and mist', r.water],['Heat', r.heat],['Callus', r.callus],['Root', r.root],
+    ['Weaning', r.wean],['Feed', r.feed],['Pinch', r.pinch],['Growth regulator', r.pgr],['Move on', r.potup]
+  ];
+  const usedBy=LOTS.filter(l=>l.recipe===code);
+  const lotLabel = lot ? (lot.source==='sbi' ? lot.pid : 'Lot '+lot.id) : '';
+  let history='';
+  if(lot && code===lot.recipe){
+    history=`
+      <div class="tl">
+        <div class="label" style="margin-bottom:8px">${esc(lotLabel)} history</div>
+        ${STAGES.map((s,i)=>`
+          <div class="tl-row${lot.stage==null||i>lot.stage?' future':''}">
+            <span class="tl-dot"></span>
+            <span style="flex:1">${s}</span>
+            <span style="color:var(--muted)">${lot.stage==null?'':i<lot.stage?'complete':i===lot.stage?'current — since '+esc(sinceLabel(lot)):'scheduled'}</span>
+          </div>`).join('')}
+        <div class="note" style="margin-top:10px">Vernalization: ${esc(lot.vern||'not logged')} · Finish: ${esc(lot.finish||'not logged')}</div>
+      </div>`;
+  } else if(lot && lot.source==='sbi' && !lot.recipe){
+    history=`<div class="note" style="margin-top:12px">${esc(lotLabel)} has no recipe yet. Pick one in the grower log below and this panel will follow the lot.</div>`;
+  } else {
+    history=`<div class="note" style="margin-top:12px">Viewing the library. Lots on ${code}: ${usedBy.length?usedBy.map(l=>l.source==='sbi'?l.pid:l.id).join(', '):'none right now'}.</div>`;
+  }
+  let glog='';
+  if(lot && lot.source==='sbi'){
+    const g=GROWER[lot.id]||{};
+    glog=`
+      <form class="glog" id="glog">
+        <div class="label" style="margin-bottom:10px">Grower log · ${esc(lotLabel)} · ${esc(lot.crop)}</div>
+        <div class="row2">
+          <div class="field"><label for="gStage">Stage</label>
+            <select id="gStage"><option value="">Not logged</option>${STAGES.map((s,i)=>`<option value="${i}"${lot.stage===i?' selected':''}>${s}</option>`).join('')}</select></div>
+          <div class="field"><label for="gRecipe">Recipe</label>
+            <select id="gRecipe"><option value="">None</option>${Object.keys(RECIPES).map(k=>`<option value="${k}"${lot.recipe===k?' selected':''}>${k} · ${esc(RECIPES[k].name.split('—')[0].trim())}</option>`).join('')}</select></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label for="gStrike">Strike % from the last rooting audit</label>
+            <input id="gStrike" type="number" inputmode="numeric" min="0" max="100" step="1" value="${lot.strike==null?'':lot.strike}" placeholder="e.g. 92"></div>
+          <div class="field"><label for="gVern">Vernalization</label>
+            <input id="gVern" type="text" value="${esc(lot.vern||'')}" placeholder="e.g. 8 wks at 38 °F"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label for="gFinish">Finish</label>
+            <input id="gFinish" type="text" value="${esc(lot.finish||'')}" placeholder="e.g. #1 · spring 27"></div>
+          <div class="field" style="display:flex;align-items:flex-end;gap:10px">
+            <label style="display:flex;align-items:center;gap:8px;margin:0 0 9px;font-size:13.5px;color:var(--ink)"><input id="gFlag" type="checkbox" style="width:18px;height:18px"${lot.flag?' checked':''}> Needs attention</label>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <span class="label">Kept in this browser only. SBI has no field for any of this.</span>
+          <button class="syncbtn" type="submit" style="height:38px">Save log</button>
+        </div>
+      </form>`;
+  }
+  $('#recipeBody').innerHTML=`
+    <div class="rhead on-dark">
+      <div class="label">${code} · used on ${usedBy.length} active ${usedBy.length===1?'lot':'lots'}</div>
+      <h4>${esc(r.name)}</h4>
+    </div>
+    <dl style="margin:0">${rows.map(([k,v])=>`<div class="spec"><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
+    <div class="note">${r.note}</div>
+    ${history}${glog}`;
+  const f=$('#glog');
+  if(f) f.onsubmit=e=>{
+    e.preventDefault();
+    const st=$('#gStage').value, sk=$('#gStrike').value;
+    saveGrower(lot.id, { stage: st===''?null:+st, recipe: $('#gRecipe').value||null, strike: sk===''?null:Math.min(100,Math.max(0,+sk)),
+      vern: $('#gVern').value.trim(), finish: $('#gFinish').value.trim(), flag: $('#gFlag').checked });
+    state.recipe=null; renderLots(); renderRecipe(); renderHero(); renderEnv(); toast('Grower log saved');
+  };
+}
+
+/* ---------- google keep mirror ---------- */
+let lastSync = 2;
+function renderKeep(){
+  const g=$('#keepGrid'); g.innerHTML='';
+  KEEP_LISTS.forEach(list=>{
+    const linked=TASKS.filter(t=>t.keep===list.id);
+    const n=el('div','keepnote');
+    n.style.background=list.color;
+    const items = linked.map(t=>({t:`${t.name} (${t.lot})`, done:t.status==='done', id:t.id}))
+      .concat(list.extra.map(e=>({t:e.t, done:e.done, id:null})));
+    n.innerHTML=`<h4>${list.title}</h4>`;
+    items.forEach(it=>{
+      const b=el('button','kitem'+(it.done?' done':''));
+      b.innerHTML=`<span class="kbox">${it.done?'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="m5 13 5 5L19 7"/></svg>':''}</span><span>${esc(it.t)}</span>`;
+      b.onclick=()=>{
+        if(it.id) toggleTask(it.id);
+        else { const e=list.extra.find(x=>x.t===it.t); e.done=!e.done; renderKeep(); toast('Updated in Keep'); }
+      };
+      n.appendChild(b);
+    });
+    n.appendChild(el('div','keepfoot',`${items.filter(i=>i.done).length} of ${items.length} done · ${linked.length} linked to lots`));
+    g.appendChild(n);
+  });
+  const open=TASKS.filter(t=>t.keep&&t.status!=='done').length;
+  $('#keepStatus').textContent=`4 lists mirrored · ${open} open items linked to production lots · last synced ${lastSync} min ago · mirror only, Keep has no API`;
+}
+$('#syncBtn').onclick=function(){
+  const b=this, l=$('#syncLabel');
+  b.disabled=true; l.textContent='Syncing…';
+  setTimeout(()=>{ lastSync=0; renderKeep(); l.textContent='Sync with Keep'; b.disabled=false;
+    $('#keepStatus').textContent=$('#keepStatus').textContent.replace('last synced 0 min ago','last synced just now');
+    toast('Keep lists up to date'); },900);
+};
+
+/* ---------- season chart ---------- */
+let activeMonth=8;
+function renderChart(){
+  const narrow=window.matchMedia('(max-width:640px)').matches;
+  const w=480, h=narrow?300:220, pad=narrow?42:30, top=16;
+  const max=Math.max(...SEASON.map(s=>Math.max(s.plan,s.act)),CAPACITY)*1.14;
+  const bw=w/SEASON.length;
+  const scale=v=>(v/max)*(h-pad-top);
+  const capY=h-pad-scale(CAPACITY);
+  let bars='';
+  SEASON.forEach((s,i)=>{
+    const x=i*bw, ph=scale(s.plan), ah=scale(s.act), sel=i===activeMonth;
+    bars+=`<g class="mo" data-i="${i}" style="cursor:pointer">
+      <rect x="${x}" y="0" width="${bw}" height="${h}" rx="6" fill="${sel?'rgba(18,57,50,.06)':'transparent'}"/>
+      <rect x="${x+bw*0.16}" y="${h-pad-ph}" width="${bw*0.36}" height="${ph}" rx="3" fill="var(--forest)" opacity="${sel?1:.8}"/>
+      <rect x="${x+bw*0.56}" y="${h-pad-ah}" width="${bw*0.28}" height="${ah}" rx="3" fill="var(--blush-2)"/>
+      <text x="${x+bw/2}" y="${h-11}" font-size="${narrow?17:11}" text-anchor="middle" fill="${sel?'#1D1E1B':'#807D75'}" font-family="DM Sans, sans-serif">${s.m}</text>
+    </g>`;
+  });
+  $('#chart').innerHTML=`<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="Planned and actual propagation volume by month">
+    <line x1="0" x2="${w}" y1="${capY}" y2="${capY}" stroke="var(--amber)" stroke-width="1.4" stroke-dasharray="5 5"/>
+    <line x1="0" x2="${w}" y1="${h-pad}" y2="${h-pad}" stroke="var(--line)" stroke-width="1.2"/>
+    ${bars}</svg>`;
+  $('#chart').querySelectorAll('.mo').forEach(g=>g.onclick=()=>{ activeMonth=+g.dataset.i; renderChart(); });
+  const s=SEASON[activeMonth];
+  $('#chartHint').textContent=`${s.m} · ${s.plan}k planned`;
+  if(SRC.kind==='sbi'){
+    const cov=(SRC.season&&SRC.season.coverage)||{};
+    $('#legendPlan').textContent='Draft plan (not from SBI)';
+    $('#monthNote').textContent = cov.snapshots>1
+      ? `${s.m}: ${s.act}k entered production, measured as day-over-day stock rises on production rows across ${cov.snapshots} snapshots (${niceDay(cov.from)} to ${niceDay(cov.to)})${cov.daily?'':' — the snapshots have gaps, so a rise nets against losses inside each gap and reads low'}. The planned figure is the draft plan, which SBI does not hold.`
+      : `Actuals need at least two daily Inventory_PIT_ snapshots — one day cannot show a rise. The planned figure is the draft plan, which SBI does not hold.`;
+  } else {
+    $('#legendPlan').textContent='Planned';
+    $('#monthNote').textContent=`${s.m}: ${s.plan}k planned, ${s.act}k actual. ${s.crops}. Bench capacity sits at ${CAPACITY}k per month.`;
+  }
+}
+
+/* ---------- planner calculator ---------- */
+function wk(n){ n=Math.round(n); while(n<1)n+=52; while(n>52)n-=52; return n; }
+function calcRow(r){
+  const toStick=Math.ceil(r.target/(r.strike/100)/(1-r.shrink/100));
+  const trays=r.cell>1?Math.ceil(toStick/r.cell):0;
+  return {toStick, trays, stick:wk(r.ship-r.grow-r.prop), potup:wk(r.ship-r.grow),
+          benchProp:Math.round(trays*TRAY_SQFT), benchFin:Math.round(r.target*(r.pot||POT_SQFT))};
+}
+// Container footprint by SBI size string. These are the mock's spacing assumptions,
+// not measured — change them once the real spacing is known.
+function potSqft(size){
+  const s=String(size||'').toUpperCase();
+  if(/#1|PRO/.test(s)) return 0.45;
+  if(/QT|QUART/.test(s)) return 0.2;
+  if(/4\.5|4 1\/2/.test(s)) return 0.16;
+  if(/6"|6 IN/.test(s)) return 0.3;
+  if(/3\.5|^3"|3 IN/.test(s)) return 0.1;
+  return 0.45;
+}
+// The order book gives the demand half of the plan: what is booked, in which size, and
+// the first ship week. Strike, shrink, cell count and the prop/grow-on weeks are grower
+// assumptions and start from defaults until the grower log knows better.
+function planFromDemand(demand){
+  return demand.slice(0,12).map(p=>({
+    crop:p.desc, prog:p.size||'—', method: p.short?`Booked ${fmt(p.ordered)} · short ${fmt(p.short)}`:`Booked ${fmt(p.ordered)}`,
+    target:p.ordered, strike:90, shrink:6, cell:72, prop:5, grow:22, ship:p.shipWeek||15, vern:false, pot:potSqft(p.size), assumed:true
+  }));
+}
+function fillCropSelect(){
+  const s=$('#pCrop'); s.innerHTML='';
+  PLAN.forEach((r,i)=>{ const o=el('option'); o.value=i; o.textContent=`${r.crop} — ${r.prog}`; s.appendChild(o); });
+  s.onchange=()=>{
+    const r=PLAN[+s.value];
+    $('#pTarget').value=r.target; $('#pStrike').value=r.strike; $('#pShrink').value=r.shrink; $('#pShip').value=r.ship;
+    calc();
+  };
+  if(PLAN.length){ const r=PLAN[0]; $('#pTarget').value=r.target; $('#pStrike').value=r.strike; $('#pShrink').value=r.shrink; $('#pShip').value=r.ship; }
+}
+function calc(){
+  if(!PLAN.length){ $('#pOut').textContent='—'; $('#pOutSub').textContent='No crops in the plan'; $('#pNote').textContent='Load an order book, or switch to the mock plan.'; return; }
+  const i=+$('#pCrop').value||0, base=PLAN[i];
+  const r={...base, target:+$('#pTarget').value||0, strike:Math.min(100,Math.max(1,+$('#pStrike').value||1)),
+           shrink:Math.min(60,Math.max(0,+$('#pShrink').value||0)), ship:wk(+$('#pShip').value||1)};
+  const c=calcRow(r);
+  $('#pOut').textContent=fmt(c.toStick);
+  $('#pOutSub').textContent=`${fmt(r.target)} salable at ${r.strike}% strike and ${r.shrink}% shrink · ${r.method}`;
+  $('#pTrays').textContent=c.trays?fmt(c.trays):'n/a';
+  $('#pBench').textContent=c.trays?fmt(c.benchProp)+' sq ft':'field';
+  $('#pFinish').textContent=fmt(c.benchFin)+' sq ft';
+  const vern=r.vern?` This crop needs a vernalization block, so hold cooler space from roughly week 45 through week 3.`:'';
+  const assumed=r.assumed?` Strike, shrink, ${r.cell}-cell trays and ${r.prop}+${r.grow} weeks are default assumptions, not from SBI.`:'';
+  $('#pNote').textContent=`Stick in week ${c.stick}, pot up in week ${c.potup}, ship from week ${r.ship}.${vern} Sticking ${fmt(c.toStick-r.target)} extra covers the losses you have historically taken on this crop.${assumed}`;
+}
+
+/* ---------- plan table ---------- */
+function renderTable(){
+  const body=$('#planBody'); body.innerHTML='';
+  let totTarget=0, totStick=0, totTrays=0, totFin=0;
+  PLAN.forEach((r,i)=>{
+    const c=calcRow(r);
+    totTarget+=r.target; totStick+=c.toStick; totTrays+=c.trays; totFin+=c.benchFin;
+    const tr=el('tr');
+    tr.innerHTML=`
+      <td class="c-name">${esc(r.crop)}</td>
+      <td class="c-sub" style="color:var(--muted)">${esc(r.prog)}</td>
+      <td class="c-sub" style="color:var(--muted)">${esc(r.method)}</td>
+      <td class="num" data-l="Target"><input class="tinput" type="number" inputmode="numeric" min="0" step="500" value="${r.target}" data-i="${i}" aria-label="Target for ${esc(r.crop)}"></td>
+      <td class="num" data-l="Strike">${r.strike}%</td>
+      <td class="num" data-l="To stick">${fmt(c.toStick)}</td>
+      <td class="num" data-l="Trays">${c.trays?fmt(c.trays):'—'}</td>
+      <td class="num" data-l="Stick wk">${c.stick}</td>
+      <td class="num" data-l="Pot-up wk">${c.potup}</td>
+      <td class="num" data-l="Ship wk">${r.ship}</td>`;
+    body.appendChild(tr);
+  });
+  body.querySelectorAll('.tinput').forEach(inp=>{
+    inp.oninput=()=>{ PLAN[+inp.dataset.i].target=Math.max(0,+inp.value||0); renderTable(); calc(); };
+  });
+  const what = SRC.kind==='sbi' ? (SRC.demand.length ? `${PLAN.length} products from the open order book` : 'Draft plan — load an Order_Allocation file to fill it from real demand') : `${PLAN.length} crops in the spring program`;
+  $('#planFoot').innerHTML=`<tr>
+    <td colspan="3">${what}</td>
+    <td class="num" data-l="Total target">${fmt(totTarget)}</td><td class="num"></td>
+    <td class="num" data-l="Total to stick">${fmt(totStick)}</td>
+    <td class="num" data-l="Total trays">${fmt(totTrays)}</td>
+    <td colspan="3"></td></tr>`;
+  $('#planSub').textContent = SRC.kind==='sbi' && SRC.demand.length
+    ? 'Targets are booked units from the order book. Strike, shrink and timing are assumptions until the grower log knows better.'
+    : 'Edit a target and the stick quantity, trays and bench space follow.';
+  const pct=Math.round(totFin/BENCH_SQFT*100);
+  $('#capLabel').textContent=`Finishing bench: ${fmt(totFin)} of ${fmt(BENCH_SQFT)} sq ft · ${pct}%`;
+  const bar=$('#capBar'); bar.style.width=Math.min(pct,100)+'%';
+  bar.classList.toggle('over', pct>100);
+  if(pct>100) $('#capLabel').textContent += ' — over capacity';
+}
+
+/* ---------- ticker & clock ---------- */
+const MOCK_FEED=[
+  ['MR','Rooting audit logged on lot 26-0417 — 94% struck, above the 90% target'],
+  ['DT','Mist zone 3 ran short overnight. Solenoid flagged for the maintenance list'],
+  ['Crew','Lot 26-0431 sticking underway — 28 of 40 trays through the line'],
+  ['AK','1,240 Rudbeckia graded and tagged for the Ohio Valley run on Thursday'],
+  ['JL','Lot 26-0398 moved to the weaning bay, day 3 of the mist step-down'],
+  ['SP','Rosmarinus R-26 sitting at 64% — still inside its 35–45 day window, review Friday']
+];
+const TXN_WORDS={TIN:'Transferred in',TOUT:'Transferred out',LOSS:'Loss',DUMP:'Dumped',SOLD:'Sold',COUNT:'Recount'};
+function feed(){
+  if(SRC.kind!=='sbi') return MOCK_FEED;
+  const ev=SRC.events.slice(-8).reverse();
+  if(!ev.length) return [['SBI','No transaction log loaded — drop an Inventory_Transaction_Log_ file to see movements here']];
+  return ev.map(e=>[ (e.user||'SBI').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()||'SB',
+    `${niceDay(e.day)} · ${TXN_WORDS[e.type]||e.type} ${fmt(Math.abs(e.qty))} — ${e.desc}${e.size?' '+e.size:''}${e.reason?' · '+e.reason:''}` ]);
+}
+let fi=0;
+function tick(){
+  const f=feed(); const [w,m]=f[fi%f.length]; fi++;
+  $('#ticker').innerHTML=`<span class="who">${esc(w)}</span><span>${esc(m)}</span>`;
+}
+function clock(){
+  const d=new Date();
+  $('#clock').innerHTML='<span class="cdate">'+d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' · </span>'+
+    d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function renderFoot(){
+  $('#footNote').textContent = SRC.kind==='sbi'
+    ? `Inventory from SBI exports as of ${niceDay(SRC.asOf)} (${SRC.files} file${SRC.files===1?'':'s'}) · stage, recipe, strike and tasks from the grower log in this browser · nothing writes back to SBI`
+    : 'Mock data for design review. Nothing here writes to a live system yet.';
+}
+
+/* ---------- import panel ---------- */
+function applySource(kind){
+  if(kind==='sbi' && !SRC.asOf) kind='mock';
+  SRC.kind=kind;
+  if(kind==='sbi'){
+    LOTS=SRC.lots; applyGrower(LOTS);
+    TASKS=store.get(KEYS.tasks, []);
+    SEASON=MOCK.season.map((s,i)=>({m:s.m, plan:s.plan, act:SRC.season?SRC.season.months[i]:0, crops:''}));
+    PLAN=SRC.demand.length ? planFromDemand(SRC.demand) : MOCK.plan.map(r=>({...r}));
+    REF=new Date(SRC.asOf+'T00:00:00');
+  } else {
+    LOTS=MOCK.lots; TASKS=MOCK.tasks; SEASON=MOCK.season; PLAN=MOCK.plan; REF=MOCK.ref;
+  }
+  store.set(KEYS.src, kind);
+  if(!LOTS.find(l=>l.id===state.lot)) state.lot = LOTS[0] ? LOTS[0].id : null;
+  state.recipe=null; state.cat='all'; fi=0;
+  renderAll();
+}
+function renderAll(){
+  renderSourceChip(); renderHero(); renderEnv(); renderFilters(); renderLots(); renderBoard(); renderRecipe();
+  renderKeep(); renderChart(); fillCropSelect(); calc(); renderTable(); tick(); renderFoot(); renderImportPanel();
+}
+function renderImportPanel(){
+  const ul=$('#fileList'); ul.innerHTML='';
+  SRC.report.forEach(r=>{
+    const li=el('li', r.kind==='error'||r.kind==='unknown'?'bad':'');
+    li.innerHTML=`<span>${esc(r.name)}</span><span>${esc(r.note)}</span>`;
+    ul.appendChild(li);
+  });
+  const s=SRC.summary;
+  $('#dataSub').textContent = SRC.asOf
+    ? `${s.lots} production lots · ${fmt(s.units)} units · as of ${niceDay(SRC.asOf)} · ${SRC.kind==='sbi'?'in use':'loaded, mock data in use'}`
+    : 'Nothing loaded — the page is showing fabricated data';
+  $('#dataNote').textContent = SRC.asOf
+    ? `${s.snapshots} snapshot${s.snapshots===1?'':'s'}${s.byLocation?'':' · aggregated files: LOST stock cannot be separated from 0000, prefer -ByLocation exports'}`
+    : 'Lots are stock in location 0000, or in any plug or liner size.';
+  $('#useMock').textContent = SRC.kind==='sbi' ? 'Show mock data' : (SRC.asOf ? 'Use SBI data' : 'Use mock data');
+}
+function readFiles(fileList){
+  const files=Array.from(fileList||[]).filter(f=>/\.csv$/i.test(f.name)||f.type==='text/csv');
+  if(!files.length){ toast('Drop CSV files from the SBI exporters'); return; }
+  Promise.all(files.map(f=>new Promise(res=>{ const r=new FileReader(); r.onload=()=>res({name:f.name,text:String(r.result)}); r.onerror=()=>res({name:f.name,text:''}); r.readAsText(f); })))
+    .then(loaded=>{
+      const prior=SRC._raw||[];
+      const names=new Set(loaded.map(f=>f.name));
+      const all=prior.filter(f=>!names.has(f.name)).concat(loaded);
+      ingestFiles(all);
+      toast(`${loaded.length} file${loaded.length===1?'':'s'} read`);
+    });
+}
+function ingestFiles(raw){
+  const r=SBI.ingest(raw);
+  SRC={ kind:SRC.kind, asOf:r.asOf, files:raw.length, report:r.report, summary:r.summary, events:r.events, demand:r.demand, season:r.season, lots:r.lots, _raw:raw };
+  // keep the parsed result, not the raw files: a season of daily snapshots would not fit
+  const keep={asOf:r.asOf, files:raw.length, report:r.report, summary:r.summary, events:r.events.slice(-500), demand:r.demand, season:r.season, lots:r.lots};
+  if(!store.set(KEYS.sbi, keep)) toast('Too much to remember between visits — the page will ask for the files again');
+  applySource(r.asOf ? 'sbi' : SRC.kind);
+}
+function restoreSource(){
+  const saved=store.get(KEYS.sbi, null);
+  if(saved && saved.asOf){ SRC={ kind:'mock', ...saved, _raw:[] }; }
+  const want=store.get(KEYS.src, 'mock');
+  applySource(want==='sbi' && SRC.asOf ? 'sbi' : 'mock');
+}
+$('#srcBtn').onclick=()=>{ renderImportPanel(); $('#dataScrim').classList.add('on'); };
+$('#dataClose').onclick=()=>$('#dataScrim').classList.remove('on');
+$('#dataScrim').onclick=e=>{ if(e.target===e.currentTarget) e.currentTarget.classList.remove('on'); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') $('#dataScrim').classList.remove('on'); });
+$('#fileIn').onchange=e=>{ readFiles(e.target.files); e.target.value=''; };
+const drop=$('#drop');
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop',e=>readFiles(e.dataTransfer.files));
+$('#useMock').onclick=()=>{ applySource(SRC.kind==='sbi'?'mock':'sbi'); toast(SRC.kind==='sbi'?'Showing SBI data':'Showing mock data'); };
+$('#clearData').onclick=()=>{
+  store.del(KEYS.sbi); SRC={ kind:'mock', asOf:'', files:0, report:[], summary:null, events:[], demand:[], season:null, lots:[], _raw:[] };
+  applySource('mock'); toast('Forgot the loaded files');
+};
+
+/* ---------- wire up ---------- */
+$('#heroArt').innerHTML=ART.mound;
+$('#sideArt1').innerHTML=ART.spike;
+$('#sideArt2').innerHTML=ART.tray;
+$('#search').oninput=e=>{ state.q=e.target.value; renderLots(); };
+$('#sortBtn').onclick=()=>{
+  const order=['task','id','strike'], names={task:'Sort: next task', id:'Sort: lot number', strike:'Sort: lowest strike'};
+  state.sort=order[(order.indexOf(state.sort)+1)%3];
+  $('#sortLabel').textContent=names[state.sort]; renderLots();
+};
+$('#scopeBtn').onclick=()=>{
+  state.scope = state.scope==='lot'?'all':'lot';
+  $('#scopeLabel').textContent = state.scope==='lot'?'Showing: this lot':'Showing: all lots';
+  renderBoard();
+};
+['pTarget','pStrike','pShrink','pShip'].forEach(id=>$('#'+id).oninput=calc);
+
+renderNav(); clock();
+restoreSource();
+
+let _rz; window.addEventListener('resize',()=>{clearTimeout(_rz);_rz=setTimeout(renderChart,180)},{passive:true});
+setInterval(clock,1000);
+setInterval(tick,7000);
+setInterval(()=>{ if(SRC.kind!=='sbi') renderEnv(); },9000);
+setInterval(()=>{ lastSync++; renderKeep(); },60000);
+
+</script>
+</body>
+</html>
