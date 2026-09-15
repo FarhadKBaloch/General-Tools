@@ -241,10 +241,12 @@ Open `equipment-qr-labels.html` in any browser (double-click it; it needs
 `qr.js` sitting next to it). Nothing is uploaded — the QR codes are generated
 in the page itself.
 
-1. Leave **Link source** on **The maintenance app** and paste the web app URL.
+1. Leave **Link source** on **An Apps Script web app** and paste the web app URL.
    The page shows you what one label will open.
-2. Type your equipment names, one per line, spelled exactly as in the form —
-   including `General equipment`:
+2. Leave **Link parameter** on `equipment`. (That field exists because the same
+   page also prints the truck inspection stickers, which use `truck` instead.)
+3. Type your equipment names under **Names**, one per line, spelled exactly as
+   in the form — including `General equipment`:
 
    ```
    Tractor
@@ -254,9 +256,9 @@ in the page itself.
    General equipment
    ```
 
-3. Leave **error correction** on **Q (25%)** — that's the level that keeps
+4. Leave **error correction** on **Q (25%)** — that's the level that keeps
    working when a label picks up scratches and dust.
-4. Click **Generate labels**, then **Print** (or print to PDF).
+5. Click **Generate labels**, then **Print** (or print to PDF).
 
 Each label is the equipment name and the code, and nothing else. A sticker on
 a machine is read at arm's length by someone who already knows what they are
@@ -656,8 +658,9 @@ old rows simply have it blank.
 ### 8. Reprint the stickers — only if you're moving them to the app
 
 If your QR codes still point at the Google Form, this is the version that moves
-them to the app. Open `equipment-qr-labels.html`, leave **Link source** on *The
-maintenance app*, paste the `/exec` URL from step 6, and print.
+them to the app. Open `equipment-qr-labels.html`, leave **Link source** on *An
+Apps Script web app* and **Link parameter** on `equipment`, paste the `/exec`
+URL from step 6, and print.
 
 Leave the old stickers up until the new ones are on the machines. Both routes
 write to the same sheet and share one ticket sequence, so there is no cutover

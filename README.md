@@ -1,8 +1,16 @@
-> **Also in this repository:** [Equipment maintenance log](EQUIPMENT-MAINTENANCE.md) —
-> QR codes on the tractor, gator, truck, sprayer and everything else that open a
-> pre-filled maintenance request and notify the right people. No server, no cost.
-> Includes a phone-friendly web app for updating requests in the field.
-> (`equipment-qr-labels.html`, `maintenance-notify.gs`, `maintenance-webapp.html`, `qr.js`)
+> **Also in this repository:**
+>
+> - [Equipment maintenance log](EQUIPMENT-MAINTENANCE.md) — QR codes on the
+>   tractor, gator, truck, sprayer and everything else that open a pre-filled
+>   maintenance request and notify the right people. No server, no cost.
+>   Includes a phone-friendly web app for updating requests in the field.
+>   (`equipment-qr-labels.html`, `maintenance-notify.gs`, `maintenance-webapp.html`, `qr.js`)
+> - [Driver vehicle inspection reports](DVIR.md) — the Millcreek Trucking
+>   pre-trip sheet as a phone app. A driver scans the sticker on the truck, sees
+>   any defect the last driver left open, works the same checklist, and signs
+>   with a finger. Defects email the shop and stay flagged until someone
+>   certifies the repair.
+>   (`dvir-notify.gs`, `dvir-webapp.html`, `dvir.test.js`, `equipment-qr-labels.html`, `qr.js`)
 
 ---
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Equipment QR labels</title>
+<title>QR labels</title>
 <style>
   :root {
     --ink: #1c2321;
@@ -115,8 +115,8 @@
 <body>
 
 <header>
-  <h1>Equipment QR labels</h1>
-  <p>Generates printable QR labels that open the maintenance app with the right machine already selected. Runs entirely in this page &mdash; nothing is uploaded.</p>
+  <h1>QR labels</h1>
+  <p>Generates printable QR labels that open an Apps Script web app with the right item already selected &mdash; a machine in the maintenance log, or a truck in the inspection log. Runs entirely in this page &mdash; nothing is uploaded.</p>
 </header>
 
 <main>
@@ -125,7 +125,7 @@
 
     <label for="mode">Link source</label>
     <select id="mode">
-      <option value="app">The maintenance app, one item per line (recommended)</option>
+      <option value="app">An Apps Script web app, one name per line (recommended)</option>
       <option value="prefill">A pre-filled Google Form link (the backup route)</option>
       <option value="explicit">A separate link for each item</option>
     </select>
@@ -138,10 +138,19 @@
       <input type="text" id="appUrl" placeholder="https://script.google.com/macros/s/AKfycb.../exec">
       <div id="appDetected" class="detected" hidden></div>
 
+      <label for="appParam">
+        Link parameter
+        <span class="hint">The <code>?name=</code> the app reads the scanned item from.
+        The maintenance log uses <code>equipment</code>; the truck inspection app uses
+        <code>truck</code>.</span>
+      </label>
+      <input type="text" id="appParam" value="equipment" spellcheck="false">
+
       <label for="appEquipments">
-        Equipment
-        <span class="hint">One per line, matching the names in the script's <code>CONFIG.equipment</code>.
-        The name is the only thing printed on the label.</span>
+        Names
+        <span class="hint">One per line, matching the names the app knows &mdash; the
+        <code>Equipment</code> tab of the maintenance log, or the <code>Trucks</code> tab of
+        the inspection log. The name is the only thing printed on the label.</span>
       </label>
       <textarea id="appEquipments" spellcheck="false">Tractor
 Gator
@@ -276,8 +285,15 @@ Gator | https://example.com/gator</textarea>
     });
   }
 
-  /** Build the app link for one machine: <web app URL>?equipment=Tractor */
-  function appLinkFor(rawUrl, name) {
+  /**
+   * Build the app link for one item: <web app URL>?equipment=Tractor
+   *
+   * The parameter name is a field rather than a constant because the same
+   * sticker format serves two apps — the maintenance log reads ?equipment=,
+   * the truck inspection log reads ?truck= — and they are printed by the same
+   * person on the same afternoon.
+   */
+  function appLinkFor(rawUrl, name, param) {
     var url;
     try {
       url = new URL(rawUrl.trim());
@@ -288,8 +304,19 @@ Gator | https://example.com/gator</textarea>
       throw new Error('That is not an Apps Script web app link. It should start with ' +
         'https://script.google.com/ and end in /exec');
     }
-    url.searchParams.set('equipment', name);
+    url.searchParams.set(appParam(param), name);
     return url.toString();
+  }
+
+  /** The query parameter to set, falling back to the maintenance log's. */
+  function appParam(value) {
+    var name = String(value === undefined ? $('appParam').value : value).trim();
+    if (!name) return 'equipment';
+    if (!/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(name)) {
+      throw new Error('"' + name + '" is not a usable link parameter. Use a plain word ' +
+        'like equipment or truck.');
+    }
+    return name;
   }
 
   function showAppDetected() {
@@ -298,7 +325,7 @@ Gator | https://example.com/gator</textarea>
     if (!raw) { box.hidden = true; return; }
     box.hidden = false;
     try {
-      var sample = appLinkFor(raw, 'Tractor');
+      var sample = appLinkFor(raw, appParam() === 'truck' ? 'Brutus' : 'Tractor');
       if (!/\/exec(\?|$)/.test(raw.split('?')[0] + '?')) {
         box.innerHTML = 'This link does not end in <code>/exec</code>. A <code>/dev</code> ' +
           'link only works for you while signed in \u2014 use the deployment URL instead.';
@@ -318,9 +345,10 @@ Gator | https://example.com/gator</textarea>
       var appNames = $('appEquipments').value.split('\n')
         .map(function (v) { return v.trim(); })
         .filter(Boolean);
-      if (!appNames.length) throw new Error('Add at least one piece of equipment.');
+      if (!appNames.length) throw new Error('Add at least one name.');
+      var param = appParam();
       return appNames.map(function (name) {
-        return { name: name, url: appLinkFor(appUrl, name) };
+        return { name: name, url: appLinkFor(appUrl, name, param) };
       });
     }
 
@@ -375,7 +403,7 @@ Gator | https://example.com/gator</textarea>
         el.className = 'label';
         el.innerHTML =
           '<div class="name">' + escapeHtml(item.name) + '</div>' +
-          window.QR.toSVG(qr, { scale: 4, margin: 2, title: item.name + ' maintenance request' });
+          window.QR.toSVG(qr, { scale: 4, margin: 2, title: item.name + ' \u2014 scan to open the app' });
         sheet.appendChild(el);
       });
     } catch (e) {
@@ -386,7 +414,7 @@ Gator | https://example.com/gator</textarea>
 
     setStatus(items.length + ' label' + (items.length === 1 ? '' : 's') +
       ' ready (QR version ' + biggest + ', level ' + ecc + '). Use Print, or your browser’s ' +
-      'Print to PDF, then stick them on the machines.');
+      'Print to PDF, then stick them where they will be scanned.');
   }
 
   $('mode').addEventListener('change', function () {
@@ -396,6 +424,7 @@ Gator | https://example.com/gator</textarea>
   });
   $('baseUrl').addEventListener('input', showDetected);
   $('appUrl').addEventListener('input', showAppDetected);
+  $('appParam').addEventListener('input', showAppDetected);
   $('generate').addEventListener('click', render);
   $('print').addEventListener('click', function () {
     if (!sheet.children.length) render();

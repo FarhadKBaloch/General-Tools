@@ -1,0 +1,1284 @@
+<!--
+  dvir-webapp.html — the Millcreek Trucking driver vehicle inspection app.
+
+  Paste this into the same Apps Script project as dvir-notify.gs, as an HTML
+  file named exactly "webapp" (File -> New -> HTML file -> name it webapp).
+  Then Deploy -> New deployment -> Web app.
+
+  Three tabs along the bottom, where a thumb reaches them:
+    Inspect  — the checklist, opened straight onto the truck that was scanned
+    Fleet    — every truck, what is outstanding, and closing a defect out
+    History  — the signed record, searchable
+
+  The shape of the screen follows the paper form it replaces: the driver ticks
+  only what is WRONG, and an untouched form means a truck that passed. That is
+  the one thing about this app that must not be redesigned into something more
+  familiar — a driver who has filled the paper sheet for years will tick a box
+  meaning "I checked this", and the app has to keep saying, loudly, that a tick
+  means a defect.
+
+  Look: matches the nursery's maintenance app — squared corners, uppercase
+  micro-labels, tabular figures — but the accent is amber-on-slate rather than
+  green, because this is a road-safety record and it should not be mistaken at
+  a glance for the greenhouse tool.
+-->
+<style>
+  :root {
+    --ink: #16191c;
+    --ink-2: #3a4148;
+    --muted: #6a737c;
+    --line: #d9dee3;
+    --line-2: #eceff2;
+    --bg: #f2f4f6;
+    --card: #ffffff;
+    --accent: #1f4e79;          /* fleet blue — the one colour that acts */
+    --accent-ink: #163a5a;
+    --defect: #a02c1c;          /* a tick means something is wrong */
+    --defect-bg: #fce7e3;
+    --defect-line: #f0bbb1;
+    --ok: #1c6b48;
+    --ok-bg: #e4f2ea;
+    --alert: #8a5300;
+    --alert-bg: #fdf0d9;
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--muted);
+  }
+
+  /* ---------- header ---------- */
+  header {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+  }
+  .titlebar { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+  .titlebar .lockup { flex: 1; min-width: 0; }
+  h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+  h1 .truck { color: var(--accent); }
+  header .sub { font-size: 12px; color: var(--muted); }
+  #refresh {
+    flex: 0 0 auto; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    margin-right: -10px;
+    font: inherit; font-size: 18px; line-height: 1;
+    border: none; border-radius: 50%; background: none;
+    color: var(--muted); cursor: pointer;
+  }
+  #refresh:active { background: var(--line-2); }
+  #refresh.spin { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- layout ---------- */
+  main { padding: 16px; max-width: 720px; margin: 0 auto; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); margin-bottom: 14px;
+  }
+  .card > h2 {
+    margin: 0; padding: 12px 14px;
+    font-size: 11px; font-weight: 700; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--muted);
+    border-bottom: 1px solid var(--line-2);
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .card > h2 .count { color: var(--defect); letter-spacing: 0; text-transform: none; font-size: 12px; }
+  .pad { padding: 14px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+
+  /* ---------- the checklist ---------- */
+  /* One row per item. The whole row is the target: a 44px tap area that does
+     not ask a driver in gloves to hit a 20px checkbox. */
+  .items { list-style: none; margin: 0; padding: 0; }
+  .items li { border-bottom: 1px solid var(--line-2); }
+  .items li:last-child { border-bottom: none; }
+
+  .item {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; min-height: 52px; padding: 8px 14px;
+    font: inherit; text-align: left; color: inherit;
+    background: none; border: none; cursor: pointer;
+  }
+  .item .box {
+    flex: 0 0 auto; width: 24px; height: 24px;
+    border: 2px solid var(--line); border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; color: transparent;
+  }
+  .item .label { flex: 1; min-width: 0; }
+  .item .flag {
+    flex: 0 0 auto; font-size: 10px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--alert);
+    background: var(--alert-bg); padding: 3px 6px; border-radius: 3px;
+  }
+  .item.on { background: var(--defect-bg); }
+  .item.on .box { border-color: var(--defect); background: var(--defect); color: #fff; }
+  .item.on .label { font-weight: 600; color: var(--defect); }
+
+  /* Left/right items: two buttons instead of one, because a paper form with an
+     L and an R column means the driver was always able to say which side. */
+  .sided { display: flex; align-items: center; gap: 10px; padding: 8px 14px; min-height: 52px; }
+  .sided .label { flex: 1; min-width: 0; }
+  .sided .sides { flex: 0 0 auto; display: flex; gap: 6px; }
+  .side {
+    width: 44px; height: 40px; font: inherit; font-weight: 700; font-size: 15px;
+    border: 2px solid var(--line); border-radius: 4px;
+    background: var(--card); color: var(--muted); cursor: pointer;
+  }
+  .side.on { border-color: var(--defect); background: var(--defect); color: #fff; }
+  .sided.any .label { font-weight: 600; color: var(--defect); }
+  .sided.any { background: var(--defect-bg); }
+
+  /* ---------- fields ---------- */
+  label.field { display: block; margin-bottom: 14px; }
+  label.field:last-child { margin-bottom: 0; }
+  label.field > span { display: block; margin-bottom: 5px; }
+  input[type=text], input[type=tel], textarea, select {
+    width: 100%; padding: 11px 12px; font: inherit;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--card); color: inherit;
+  }
+  input:focus, textarea:focus, select:focus {
+    outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent);
+  }
+  textarea { min-height: 88px; resize: vertical; }
+  .two { display: flex; gap: 12px; }
+  .two > * { flex: 1; min-width: 0; }
+
+  /* Pre/post is a two-state choice, so it is two buttons and not a dropdown:
+     one tap, and both options readable without opening anything. */
+  .segmented { display: flex; gap: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .segmented button {
+    flex: 1; padding: 12px 8px; font: inherit; font-weight: 600;
+    border: none; background: var(--card); color: var(--muted); cursor: pointer;
+  }
+  .segmented button + button { border-left: 1px solid var(--line); }
+  .segmented button.on { background: var(--accent); color: #fff; }
+
+  /* ---------- buttons ---------- */
+  button.primary, button.secondary, button.danger {
+    font: inherit; font-weight: 600; padding: 13px 18px; width: 100%;
+    border-radius: var(--radius); cursor: pointer;
+  }
+  button.primary { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+  button.secondary { border: 1px solid var(--line); background: var(--card); color: var(--ink-2); }
+  button.danger { border: 1px solid var(--defect); background: var(--defect); color: #fff; }
+  button[disabled] { opacity: .5; cursor: default; }
+  button.primary:active:not([disabled]), button.danger:active:not([disabled]) { filter: brightness(.92); }
+
+  /* ---------- banners ---------- */
+  .banner {
+    border: 1px solid var(--line); border-left-width: 4px;
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px;
+    background: var(--card); font-size: 14px;
+  }
+  .banner.warn { border-left-color: var(--defect); background: var(--defect-bg); border-color: var(--defect-line); }
+  .banner.good { border-left-color: var(--ok); background: var(--ok-bg); border-color: #bfe0cf; }
+  .banner.note { border-left-color: var(--accent); }
+  .banner h3 { margin: 0 0 6px; font-size: 15px; }
+  .banner ul { margin: 6px 0 0; padding-left: 18px; }
+  .banner li { margin-bottom: 2px; }
+
+  /* ---------- signature ---------- */
+  .sigwrap { position: relative; border: 1px dashed var(--line); border-radius: var(--radius); background: #fcfcfd; }
+  .sigwrap.signed { border-style: solid; border-color: var(--accent); }
+  canvas#sig { display: block; width: 100%; height: 150px; touch-action: none; border-radius: var(--radius); }
+  .sighint {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 14px; pointer-events: none;
+  }
+  .sigwrap.signed .sighint { display: none; }
+  .sigrow { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 12px; }
+  .linkbtn { font: inherit; font-size: 13px; background: none; border: none; color: var(--accent); cursor: pointer; padding: 6px 0; }
+
+  /* ---------- attestation ---------- */
+  /* Deliberately the same shape as a checklist row, because it is the same
+     decision the paper form asks for in the same place. */
+  .attest {
+    display: flex; align-items: flex-start; gap: 12px; width: 100%;
+    padding: 14px; font: inherit; text-align: left; color: inherit;
+    background: none; border: none; cursor: pointer;
+  }
+  .attest .box {
+    flex: 0 0 auto; width: 24px; height: 24px; margin-top: 1px;
+    border: 2px solid var(--line); border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; color: transparent;
+  }
+  .attest.on { background: var(--ok-bg); }
+  .attest.on .box { border-color: var(--ok); background: var(--ok); color: #fff; }
+  .attest.on .label { font-weight: 600; color: var(--ok); }
+
+  /* ---------- sticky submit ---------- */
+  .submitbar {
+    position: sticky; bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    z-index: 4; margin: 18px 0 0;
+  }
+  .submitbar .inner {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 10px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.09);
+  }
+  .tally { text-align: center; font-size: 13px; margin-bottom: 8px; }
+  .tally.bad { color: var(--defect); font-weight: 600; }
+  .tally.good { color: var(--ok); font-weight: 600; }
+
+  /* ---------- records ---------- */
+  .record { border-bottom: 1px solid var(--line-2); padding: 12px 14px; }
+  .record:last-child { border-bottom: none; }
+  .record .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .record .who { font-weight: 600; }
+  .record .meta { font-size: 12px; color: var(--muted); }
+  .record .defects { margin: 8px 0 0; padding-left: 18px; color: var(--defect); font-size: 14px; }
+  .record .remarks { margin-top: 8px; font-size: 14px; white-space: pre-wrap; color: var(--ink-2); }
+  .pill {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; padding: 3px 7px; border-radius: 3px; white-space: nowrap;
+  }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.bad { background: var(--defect-bg); color: var(--defect); }
+  .pill.done { background: var(--line-2); color: var(--ink-2); }
+
+  .truckrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line-2); }
+  .truckrow:last-child { border-bottom: none; }
+  .truckrow .name { font-weight: 700; font-size: 16px; flex: 1; }
+
+  /* ---------- bottom tabs ---------- */
+  nav.tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+    display: flex; background: var(--card); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  nav.tabs button {
+    flex: 1; padding: 9px 4px 10px; font: inherit; font-size: 11px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase;
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    border-top: 2px solid transparent; margin-top: -1px;
+  }
+  nav.tabs button .ico { display: block; font-size: 18px; line-height: 1.2; }
+  nav.tabs button.on { color: var(--accent); border-top-color: var(--accent); }
+  nav.tabs .badge {
+    display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 3px;
+    font-size: 10px; line-height: 16px; border-radius: 8px;
+    background: var(--defect); color: #fff; vertical-align: text-top;
+  }
+
+  .toast {
+    position: fixed; left: 16px; right: 16px; z-index: 9;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    background: var(--ink); color: #fff; padding: 12px 14px;
+    border-radius: var(--radius); font-size: 14px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25);
+  }
+  .toast.bad { background: var(--defect); }
+  .spinner { text-align: center; color: var(--muted); padding: 28px 14px; font-size: 14px; }
+</style>
+
+<header>
+  <div class="titlebar">
+    <div class="lockup">
+      <h1 id="title">Vehicle Inspection</h1>
+      <div class="sub" id="subtitle"></div>
+    </div>
+    <button id="refresh" type="button" title="Reload" aria-label="Reload">&#8635;</button>
+  </div>
+</header>
+
+<main id="view">
+  <div class="spinner">Loading&hellip;</div>
+</main>
+
+<nav class="tabs" id="tabs">
+  <button type="button" data-tab="inspect" class="on"><span class="ico">&#9745;</span>Inspect</button>
+  <button type="button" data-tab="fleet"><span class="ico">&#128666;</span>Fleet<span class="badge" id="fleetBadge" hidden></span></button>
+  <button type="button" data-tab="history"><span class="ico">&#128220;</span>History</button>
+</nav>
+
+<div id="boot" data-truck="<?= scannedTruck ?>" data-company="<?= companyName ?>" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var boot = document.getElementById('boot');
+  var viewEl = document.getElementById('view');
+  var titleEl = document.getElementById('title');
+  var subtitleEl = document.getElementById('subtitle');
+
+  var state = {
+    tab: 'inspect',
+    ctx: null,             // getContext payload
+    truck: boot.getAttribute('data-truck') || '',
+    company: boot.getAttribute('data-company') || '',
+    loading: false,
+    submitting: false,
+    fleet: null,
+    history: { reports: [], total: 0, offset: 0, more: false, search: '', truck: '' },
+    // the form in progress
+    form: null
+  };
+
+  // =========================================================================
+  // Small helpers
+  // =========================================================================
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function $(id) { return document.getElementById(id); }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  function errText(err) {
+    return (err && err.message) ? err.message : String(err || 'Something went wrong.');
+  }
+
+  /**
+   * localStorage is not guaranteed here: the app runs in a sandboxed iframe,
+   * and a locked-down phone or a private window can make even reading it
+   * throw. Every use is wrapped, and the app works without it — remembering
+   * the driver's name is a convenience, not a feature anything depends on.
+   */
+  function remembered(key) {
+    try { return window.localStorage.getItem('dvir.' + key) || ''; } catch (e) { return ''; }
+  }
+  function remember(key, value) {
+    try { window.localStorage.setItem('dvir.' + key, value); } catch (e) { /* fine */ }
+  }
+
+  var toastTimer = null;
+  function toast(message, bad) {
+    var el = $('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      document.body.appendChild(el);
+    }
+    el.className = 'toast' + (bad ? ' bad' : '');
+    el.textContent = message;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); },
+      bad ? 7000 : 3500);
+  }
+
+  function spinning(on) {
+    $('refresh').className = on ? 'spin' : '';
+  }
+
+  // =========================================================================
+  // Loading
+  // =========================================================================
+
+  function loadContext(then) {
+    state.loading = true;
+    spinning(true);
+    google.script.run
+      .withSuccessHandler(function (ctx) {
+        state.loading = false;
+        spinning(false);
+        state.ctx = ctx;
+        if (!state.truck && ctx.truck) state.truck = ctx.truck;
+        state.company = ctx.companyName || state.company;
+        resetForm();
+        if (then) then();
+        render();
+      })
+      .withFailureHandler(function (err) {
+        state.loading = false;
+        spinning(false);
+        viewEl.innerHTML = '<div class="banner warn"><h3>Could not load</h3>' +
+          esc(errText(err)) + '</div>' +
+          '<button class="secondary" id="retry" type="button">Try again</button>';
+        var retry = $('retry');
+        if (retry) retry.addEventListener('click', function () { loadContext(); });
+      })
+      .getContext(state.truck);
+  }
+
+  function loadFleet() {
+    spinning(true);
+    google.script.run
+      .withSuccessHandler(function (data) {
+        spinning(false);
+        state.fleet = data;
+        renderFleetBadge();
+        if (state.tab === 'fleet') render();
+      })
+      .withFailureHandler(function (err) {
+        spinning(false);
+        if (state.tab === 'fleet') {
+          viewEl.innerHTML = '<div class="banner warn">' + esc(errText(err)) + '</div>';
+        }
+      })
+      .getFleet();
+  }
+
+  function loadHistory(reset) {
+    spinning(true);
+    if (reset) state.history.offset = 0;
+    google.script.run
+      .withSuccessHandler(function (data) {
+        spinning(false);
+        state.history.total = data.total;
+        state.history.more = data.more;
+        state.history.canCertify = data.canCertify;
+        state.history.reports = reset ? data.reports : state.history.reports.concat(data.reports);
+        state.history.offset = state.history.reports.length;
+        if (state.tab === 'history') render();
+      })
+      .withFailureHandler(function (err) {
+        spinning(false);
+        if (state.tab === 'history') {
+          viewEl.innerHTML = '<div class="banner warn">' + esc(errText(err)) + '</div>';
+        }
+      })
+      .getHistory({
+        truck: state.history.truck,
+        search: state.history.search,
+        offset: reset ? 0 : state.history.offset
+      });
+  }
+
+  // =========================================================================
+  // The form in progress
+  //
+  // Held in one object rather than read off the DOM at submit time, so that
+  // re-rendering a section (which happens on every tap) cannot lose what the
+  // driver has already typed.
+  // =========================================================================
+
+  function resetForm() {
+    state.form = {
+      type: 'Pre-trip',
+      driver: remembered('driver'),
+      odometer: '',
+      remarks: '',
+      satisfactory: false,
+      defects: {},          // "key" or "key:L" -> true
+      reviewedReport: '',
+      reviewed: false,
+      signature: ''
+    };
+  }
+
+  function defectList() {
+    return Object.keys(state.form.defects).filter(function (id) {
+      return state.form.defects[id];
+    });
+  }
+
+  function defectPayload() {
+    return defectList().map(function (id) {
+      var parts = id.split(':');
+      return { key: parts[0], side: parts[1] || '' };
+    });
+  }
+
+  function toggleDefect(id) {
+    if (state.form.defects[id]) delete state.form.defects[id];
+    else {
+      state.form.defects[id] = true;
+      // Ticking a defect and "everything is fine" cannot both be true. The
+      // server refuses that combination; clearing it here means the driver
+      // never has to be told about it.
+      state.form.satisfactory = false;
+    }
+    syncFormUi();
+  }
+
+  /**
+   * Repaint only the parts that change on a tap.
+   *
+   * A full re-render would blur the remarks box and drop the signature canvas
+   * mid-form, which on a phone reads as the app throwing the work away.
+   */
+  function syncFormUi() {
+    var count = defectList().length;
+
+    Array.prototype.forEach.call(document.querySelectorAll('.item[data-id]'), function (el) {
+      var on = !!state.form.defects[el.getAttribute('data-id')];
+      el.className = 'item' + (on ? ' on' : '');
+      el.setAttribute('aria-pressed', on ? 'true' : 'false');
+      el.querySelector('.box').textContent = on ? '✓' : '';
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('.side[data-id]'), function (el) {
+      var on = !!state.form.defects[el.getAttribute('data-id')];
+      el.className = 'side' + (on ? ' on' : '');
+      el.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('.sided[data-key]'), function (el) {
+      var key = el.getAttribute('data-key');
+      var any = state.form.defects[key + ':L'] || state.form.defects[key + ':R'];
+      el.className = 'sided' + (any ? ' any' : '');
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('.card[data-section]'), function (el) {
+      var n = 0;
+      Array.prototype.forEach.call(el.querySelectorAll('[data-id]'), function (t) {
+        if (state.form.defects[t.getAttribute('data-id')]) n++;
+      });
+      var badge = el.querySelector('.count');
+      if (badge) badge.textContent = n ? plural(n, 'defect') : '';
+    });
+
+    var attest = $('attest');
+    if (attest) {
+      attest.className = 'attest' + (state.form.satisfactory ? ' on' : '');
+      attest.setAttribute('aria-pressed', state.form.satisfactory ? 'true' : 'false');
+      attest.querySelector('.box').textContent = state.form.satisfactory ? '✓' : '';
+    }
+    var attestCard = $('attestCard');
+    if (attestCard) attestCard.hidden = count > 0;
+
+    var remarksWrap = $('remarksWrap');
+    if (remarksWrap) {
+      remarksWrap.querySelector('.req').textContent = count
+        ? 'Required — say what is wrong and where'
+        : 'Optional';
+    }
+
+    var review = $('reviewBox');
+    if (review) {
+      review.className = 'attest' + (state.form.reviewed ? ' on' : '');
+      review.setAttribute('aria-pressed', state.form.reviewed ? 'true' : 'false');
+      review.querySelector('.box').textContent = state.form.reviewed ? '✓' : '';
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('.segmented button[data-type]'), function (el) {
+      el.className = el.getAttribute('data-type') === state.form.type ? 'on' : '';
+    });
+
+    var odo = $('odoLabel');
+    if (odo) odo.textContent = state.form.type === 'Pre-trip' ? 'Mileage out' : 'Mileage in';
+
+    syncSubmit();
+  }
+
+  function syncSubmit() {
+    var tally = $('tally');
+    var btn = $('submit');
+    if (!btn) return;
+    var count = defectList().length;
+
+    if (count) {
+      tally.className = 'tally bad';
+      tally.textContent = plural(count, 'defect') + ' marked';
+      btn.className = 'danger';
+      btn.textContent = state.submitting ? 'Sending…' : 'Submit ' + plural(count, 'defect');
+    } else if (state.form.satisfactory) {
+      tally.className = 'tally good';
+      tally.textContent = 'No defects observed';
+      btn.className = 'primary';
+      btn.textContent = state.submitting ? 'Sending…' : 'Submit inspection';
+    } else {
+      tally.className = 'tally muted';
+      tally.textContent = 'Tap anything defective, or confirm the truck is satisfactory';
+      btn.className = 'primary';
+      btn.textContent = state.submitting ? 'Sending…' : 'Submit inspection';
+    }
+    btn.disabled = state.submitting || (!count && !state.form.satisfactory);
+  }
+
+  // =========================================================================
+  // Inspect screen
+  // =========================================================================
+
+  function renderInspect() {
+    var ctx = state.ctx;
+    if (!ctx.trucks.length) {
+      viewEl.innerHTML = '<div class="banner warn"><h3>No trucks set up</h3>' +
+        'Add them to the Trucks tab of the log, one per row.</div>';
+      return;
+    }
+    if (!state.truck) { renderTruckPicker(); return; }
+
+    var st = ctx.truckState || { openDefects: [], today: [], lastOdometer: '' };
+    var html = '';
+
+    // --- what the last driver left behind --------------------------------
+    // Federal rules make the next driver review the last report's defects
+    // before the truck moves. That is this banner, and the tick under it.
+    if (st.openDefects.length) {
+      html += '<div class="banner warn"><h3>' +
+        plural(st.openDefects.length, 'open defect report') + ' on this truck</h3>' +
+        st.openDefects.map(function (d) {
+          return '<div style="margin-top:8px">' +
+            '<div class="small muted">' + esc(d.report) + ' · ' + esc(d.type) + ' · ' +
+              esc(d.date) + ' · ' + esc(d.driver) + '</div>' +
+            '<ul>' + d.defects.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
+            (d.remarks ? '<div class="small" style="margin-top:4px">' + esc(d.remarks) + '</div>' : '') +
+          '</div>';
+        }).join('') +
+        '<div class="small" style="margin-top:10px">Nobody has certified these as repaired yet. ' +
+          'Do not take the truck out until you are satisfied it is safe.</div>' +
+      '</div>';
+
+      html += '<div class="card"><button class="attest" id="reviewBox" type="button" aria-pressed="false">' +
+        '<span class="box"></span>' +
+        '<span class="label">I have reviewed the defects listed above.</span>' +
+      '</button></div>';
+    } else if (st.lastReport) {
+      html += '<div class="banner good"><h3>No open defects</h3>' +
+        '<span class="small">Last inspected ' + esc(st.lastReport.date) + ' at ' +
+        esc(st.lastReport.time) + ' by ' + esc(st.lastReport.driver) + ' (' +
+        esc(st.lastReport.type.toLowerCase()) + ').</span></div>';
+    } else {
+      html += '<div class="banner note"><span class="small">No inspections on file for this ' +
+        'truck yet. This will be the first.</span></div>';
+    }
+
+    if (st.today && st.today.length) {
+      html += '<div class="banner note"><span class="small">Already today: ' +
+        st.today.map(function (t) {
+          return esc(t.type) + ' at ' + esc(t.time) + ' by ' + esc(t.driver);
+        }).join(' · ') + '</span></div>';
+    }
+
+    // --- who, when, how far ----------------------------------------------
+    html += '<div class="card"><h2>This inspection</h2><div class="pad">' +
+      '<label class="field"><span class="eyebrow">Type</span>' +
+        '<span class="segmented">' +
+          ctx.types.map(function (t) {
+            return '<button type="button" data-type="' + esc(t) + '"' +
+              (t === state.form.type ? ' class="on"' : '') + '>' + esc(t) + '</button>';
+          }).join('') +
+        '</span>' +
+      '</label>' +
+      '<label class="field"><span class="eyebrow">Driver</span>' +
+        '<input type="text" id="driver" autocomplete="name" placeholder="Your name" value="' +
+          esc(state.form.driver) + '">' +
+      '</label>' +
+      '<div class="two">' +
+        '<label class="field"><span class="eyebrow" id="odoLabel">Mileage out</span>' +
+          '<input type="tel" id="odometer" inputmode="numeric" class="num" placeholder="' +
+            (st.lastOdometer ? esc(st.lastOdometer) : '148320') + '" value="' +
+            esc(state.form.odometer) + '">' +
+        '</label>' +
+        '<label class="field"><span class="eyebrow">Date &amp; time</span>' +
+          '<input type="text" value="' + esc(nowLabel()) + '" readonly>' +
+        '</label>' +
+      '</div>' +
+      (st.lastOdometer
+        ? '<div class="small muted" id="odoNote">Last recorded: ' + esc(st.lastOdometer) + '</div>'
+        : '') +
+    '</div></div>';
+
+    // --- the checklist ----------------------------------------------------
+    html += '<div class="banner note"><strong>Tap anything that is defective.</strong> ' +
+      '<span class="small">Leave an item alone if it is fine — same as the paper sheet.</span></div>';
+
+    html += ctx.sections.map(function (section) {
+      return '<div class="card" data-section="' + esc(section.name) + '">' +
+        '<h2><span>' + esc(section.name) + '</span><span class="count"></span></h2>' +
+        '<ul class="items">' + section.items.map(itemHtml).join('') + '</ul>' +
+      '</div>';
+    }).join('');
+
+    // --- remarks, attestation, signature ----------------------------------
+    html += '<div class="card" id="remarksWrap"><h2><span>Driver remarks</span>' +
+        '<span class="req small muted" style="letter-spacing:0;text-transform:none"></span></h2>' +
+      '<div class="pad"><textarea id="remarks" placeholder="What is wrong, and where on the truck?">' +
+        esc(state.form.remarks) + '</textarea></div></div>';
+
+    html += '<div class="card" id="attestCard"><button class="attest" id="attest" type="button" aria-pressed="false">' +
+      '<span class="box"></span>' +
+      '<span class="label">Truck is in satisfactory condition — no defects observed.</span>' +
+    '</button></div>';
+
+    html += '<div class="card"><h2>Driver signature</h2><div class="pad">' +
+      '<div class="sigwrap" id="sigwrap">' +
+        '<canvas id="sig"></canvas>' +
+        '<div class="sighint">Sign here with your finger</div>' +
+      '</div>' +
+      '<div class="sigrow">' +
+        '<span class="small muted">' + esc(state.form.driver || 'Signed by the driver named above') + '</span>' +
+        '<button class="linkbtn" id="clearSig" type="button">Clear</button>' +
+      '</div>' +
+    '</div></div>';
+
+    html += '<div class="submitbar"><div class="inner">' +
+      '<div class="tally" id="tally"></div>' +
+      '<button class="primary" id="submit" type="button">Submit inspection</button>' +
+    '</div></div>';
+
+    html += '<p class="small muted" style="margin:16px 0 0">Reports and repair certifications are ' +
+      'kept for ' + (ctx.retentionMonths || 3) + ' months.</p>';
+
+    viewEl.innerHTML = html;
+    wireInspect();
+    syncFormUi();
+  }
+
+  function itemHtml(item) {
+    if (item.sides) {
+      return '<li><div class="sided" data-key="' + esc(item.key) + '">' +
+        '<span class="label">' + esc(item.label) + '</span>' +
+        (item.alert ? '<span class="flag">Safety</span>' : '') +
+        '<span class="sides">' +
+          ['L', 'R'].map(function (side) {
+            return '<button class="side" type="button" aria-pressed="false" data-id="' +
+              esc(item.key) + ':' + side + '" aria-label="' + esc(item.label) + ' ' +
+              (side === 'L' ? 'left' : 'right') + ' defective">' + side + '</button>';
+          }).join('') +
+        '</span>' +
+      '</div></li>';
+    }
+    return '<li><button class="item" type="button" aria-pressed="false" data-id="' +
+      esc(item.key) + '">' +
+      '<span class="box"></span>' +
+      '<span class="label">' + esc(item.label) + '</span>' +
+      (item.alert ? '<span class="flag">Safety</span>' : '') +
+    '</button></li>';
+  }
+
+  function nowLabel() {
+    var d = new Date();
+    var h = d.getHours();
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    var m = String(d.getMinutes());
+    if (m.length < 2) m = '0' + m;
+    return (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear() + '  ' + h + ':' + m + ' ' + ampm;
+  }
+
+  function renderTruckPicker() {
+    viewEl.innerHTML =
+      '<div class="banner note"><h3>Which truck?</h3><span class="small">Scanning the ' +
+        'sticker on the truck picks it automatically. Choose it here if you got to this ' +
+        'page another way.</span></div>' +
+      '<div class="card">' +
+        state.ctx.trucks.map(function (t) {
+          return '<div class="truckrow"><span class="name">' + esc(t) + '</span>' +
+            '<button class="secondary" style="width:auto" type="button" data-pick="' + esc(t) +
+            '">Inspect</button></div>';
+        }).join('') +
+      '</div>';
+
+    Array.prototype.forEach.call(viewEl.querySelectorAll('[data-pick]'), function (btn) {
+      btn.addEventListener('click', function () {
+        state.truck = btn.getAttribute('data-pick');
+        loadContext();
+      });
+    });
+  }
+
+  function wireInspect() {
+    Array.prototype.forEach.call(viewEl.querySelectorAll('[data-id]'), function (el) {
+      el.addEventListener('click', function () { toggleDefect(el.getAttribute('data-id')); });
+    });
+
+    Array.prototype.forEach.call(viewEl.querySelectorAll('.segmented button[data-type]'), function (el) {
+      el.addEventListener('click', function () {
+        state.form.type = el.getAttribute('data-type');
+        syncFormUi();
+      });
+    });
+
+    var attest = $('attest');
+    if (attest) {
+      attest.addEventListener('click', function () {
+        state.form.satisfactory = !state.form.satisfactory;
+        syncFormUi();
+      });
+    }
+
+    var review = $('reviewBox');
+    if (review) {
+      review.addEventListener('click', function () {
+        state.form.reviewed = !state.form.reviewed;
+        syncFormUi();
+      });
+    }
+
+    $('driver').addEventListener('input', function () { state.form.driver = this.value; });
+    $('remarks').addEventListener('input', function () { state.form.remarks = this.value; });
+
+    var odo = $('odometer');
+    odo.addEventListener('input', function () {
+      state.form.odometer = this.value;
+      warnOnOdometer();
+    });
+
+    $('clearSig').addEventListener('click', clearSignature);
+    $('submit').addEventListener('click', submit);
+    setUpSignature();
+  }
+
+  /**
+   * An odometer below the last recorded one is usually a typo, occasionally a
+   * replaced cluster, and never something to block a safety inspection over.
+   * Say so and let the driver decide.
+   */
+  function warnOnOdometer() {
+    var note = $('odoNote');
+    var st = state.ctx.truckState;
+    if (!note || !st || !st.lastOdometer) return;
+    var typed = Number(String(state.form.odometer).replace(/[, ]/g, ''));
+    var last = Number(st.lastOdometer);
+    if (state.form.odometer && isFinite(typed) && isFinite(last) && typed < last) {
+      note.innerHTML = '<span style="color:var(--defect);font-weight:600">Lower than the last ' +
+        'reading (' + esc(st.lastOdometer) + ').</span> Check the number, or mention it in the remarks.';
+    } else {
+      note.textContent = 'Last recorded: ' + st.lastOdometer;
+    }
+  }
+
+  // =========================================================================
+  // Signature pad
+  //
+  // Pointer events cover finger, stylus and mouse in one path. The canvas is
+  // sized in device pixels so a signature on a phone is not a blurry
+  // upscaled thumbnail in the log.
+  // =========================================================================
+
+  var sigCtx = null, sigDrawing = false, sigDirty = false;
+
+  function setUpSignature() {
+    var canvas = $('sig');
+    if (!canvas) return;
+
+    var ratio = window.devicePixelRatio || 1;
+    var rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, Math.round(rect.width * ratio));
+    canvas.height = Math.max(1, Math.round(rect.height * ratio));
+
+    sigCtx = canvas.getContext('2d');
+    sigCtx.scale(ratio, ratio);
+    sigCtx.lineWidth = 2.2;
+    sigCtx.lineCap = 'round';
+    sigCtx.lineJoin = 'round';
+    sigCtx.strokeStyle = '#16191c';
+    sigDirty = false;
+
+    // A signature drawn before a re-render survives it.
+    if (state.form.signature) {
+      var img = new Image();
+      img.onload = function () {
+        sigCtx.drawImage(img, 0, 0, rect.width, rect.height);
+        sigDirty = true;
+        $('sigwrap').className = 'sigwrap signed';
+      };
+      img.src = state.form.signature;
+    }
+
+    var point = function (e) {
+      var r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+
+    canvas.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      sigDrawing = true;
+      canvas.setPointerCapture(e.pointerId);
+      var p = point(e);
+      sigCtx.beginPath();
+      sigCtx.moveTo(p.x, p.y);
+      // A dot, so a signature that is one tap still leaves a mark.
+      sigCtx.lineTo(p.x + 0.1, p.y);
+      sigCtx.stroke();
+      sigDirty = true;
+      $('sigwrap').className = 'sigwrap signed';
+    });
+
+    canvas.addEventListener('pointermove', function (e) {
+      if (!sigDrawing) return;
+      e.preventDefault();
+      var p = point(e);
+      sigCtx.lineTo(p.x, p.y);
+      sigCtx.stroke();
+    });
+
+    var stop = function () {
+      if (!sigDrawing) return;
+      sigDrawing = false;
+      captureSignature();
+    };
+    canvas.addEventListener('pointerup', stop);
+    canvas.addEventListener('pointercancel', stop);
+    canvas.addEventListener('pointerleave', stop);
+  }
+
+  function captureSignature() {
+    var canvas = $('sig');
+    if (!canvas || !sigDirty) { state.form.signature = ''; return; }
+    try {
+      state.form.signature = canvas.toDataURL('image/png');
+    } catch (e) {
+      state.form.signature = '';
+    }
+  }
+
+  function clearSignature() {
+    var canvas = $('sig');
+    if (!canvas || !sigCtx) return;
+    sigCtx.clearRect(0, 0, canvas.width, canvas.height);
+    sigDirty = false;
+    state.form.signature = '';
+    $('sigwrap').className = 'sigwrap';
+  }
+
+  // =========================================================================
+  // Submitting
+  // =========================================================================
+
+  function submit() {
+    if (state.submitting) return;
+    var count = defectList().length;
+    var st = state.ctx.truckState || { openDefects: [] };
+
+    // Checked here as well as on the server, so a driver finds out before they
+    // have signed rather than after.
+    if (!state.form.driver.trim()) {
+      toast('Add your name first.', true);
+      $('driver').focus();
+      return;
+    }
+    if (count && !state.form.remarks.trim()) {
+      toast('Describe the defect in the remarks box.', true);
+      $('remarks').focus();
+      return;
+    }
+    if (st.openDefects.length && !state.form.reviewed) {
+      toast('Confirm you have reviewed the open defects on this truck.', true);
+      var box = $('reviewBox');
+      if (box) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    captureSignature();
+    if (!state.form.signature) {
+      toast('Sign the report before submitting it.', true);
+      $('sigwrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    state.submitting = true;
+    syncSubmit();
+    remember('driver', state.form.driver.trim());
+
+    var payload = {
+      truck: state.truck,
+      type: state.form.type,
+      driver: state.form.driver.trim(),
+      odometer: state.form.odometer.trim(),
+      remarks: state.form.remarks.trim(),
+      satisfactory: count === 0 && state.form.satisfactory,
+      defects: defectPayload(),
+      reviewedReport: st.openDefects.map(function (d) { return d.report; }).join(', '),
+      signature: { data: state.form.signature }
+    };
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        state.submitting = false;
+        renderDone(result);
+        loadFleet();
+      })
+      .withFailureHandler(function (err) {
+        state.submitting = false;
+        syncSubmit();
+        // Nothing is cleared: the form is still filled in and still signed, so
+        // a failed send is a "try again", not a form to fill in twice.
+        toast(errText(err), true);
+      })
+      .submitInspection(payload);
+  }
+
+  function renderDone(result) {
+    var good = result.defectCount === 0;
+    viewEl.innerHTML =
+      '<div class="banner ' + (good ? 'good' : 'warn') + '">' +
+        '<h3>' + (good ? 'Inspection filed' : plural(result.defectCount, 'defect') + ' reported') + '</h3>' +
+        '<div class="small">' + esc(result.report) + ' · ' + esc(result.truck) + ' · ' +
+          esc(result.type) + '</div>' +
+        (good
+          ? '<div class="small" style="margin-top:8px">Recorded as satisfactory. Drive safe.</div>'
+          : '<div class="small" style="margin-top:8px">The shop has been emailed. This truck stays ' +
+            'flagged until somebody certifies the repair.</div>') +
+      '</div>' +
+      '<div class="card"><div class="pad">' +
+        '<button class="secondary" id="again" type="button">File another inspection</button>' +
+      '</div></div>';
+
+    $('again').addEventListener('click', function () {
+      loadContext();
+    });
+  }
+
+  // =========================================================================
+  // Fleet screen — the shop's view, and where a defect gets closed out
+  // =========================================================================
+
+  function renderFleet() {
+    if (!state.fleet) {
+      viewEl.innerHTML = '<div class="spinner">Loading&hellip;</div>';
+      loadFleet();
+      return;
+    }
+    var data = state.fleet;
+    var openTrucks = data.fleet.filter(function (f) { return f.openDefects.length; });
+
+    var html = '';
+    html += '<div class="banner ' + (openTrucks.length ? 'warn' : 'good') + '">' +
+      '<h3>' + (openTrucks.length
+        ? plural(openTrucks.length, 'truck') + ' with open defects'
+        : 'No open defects across the fleet') + '</h3>' +
+      '<span class="small">' + plural(data.fleet.length, 'truck') + ' on the list.</span>' +
+    '</div>';
+
+    html += '<div class="card"><h2>Fleet</h2>' +
+      data.fleet.map(function (f) {
+        var pill = f.openDefects.length
+          ? '<span class="pill bad">' + plural(f.openDefects.length, 'defect') + '</span>'
+          : (f.lastReport ? '<span class="pill ok">Clear</span>'
+                          : '<span class="pill done">No reports</span>');
+        return '<div class="truckrow">' +
+          '<span class="name">' + esc(f.truck) + '</span>' +
+          '<span class="small muted" style="text-align:right">' +
+            (f.lastReport
+              ? esc(f.lastReport.date) + '<br>' + esc(f.lastReport.driver)
+              : 'never inspected') +
+            (f.stale ? '<br><span style="color:var(--alert);font-weight:600">overdue</span>' : '') +
+          '</span>' +
+          pill +
+        '</div>';
+      }).join('') +
+    '</div>';
+
+    if (openTrucks.length) {
+      html += '<h2 class="eyebrow" style="margin:20px 0 8px">Outstanding defects</h2>';
+      openTrucks.forEach(function (f) {
+        f.openDefects.forEach(function (d) {
+          html += '<div class="card" data-report="' + esc(d.report) + '">' +
+            '<h2><span>' + esc(f.truck) + ' · ' + esc(d.report) + '</span>' +
+              '<span class="pill bad">' + esc(d.repairStatus) + '</span></h2>' +
+            '<div class="record">' +
+              '<div class="meta">' + esc(d.type) + ' · ' + esc(d.date) + ' ' + esc(d.time) +
+                ' · ' + esc(d.driver) + '</div>' +
+              '<ul class="defects">' +
+                d.defects.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') +
+              '</ul>' +
+              (d.remarks ? '<div class="remarks">' + esc(d.remarks) + '</div>' : '') +
+            '</div>' +
+            (data.canCertify
+              ? '<div class="pad certify" data-report="' + esc(d.report) + '" data-row="' + d.row + '">' +
+                  '<label class="field"><span class="eyebrow">Certified by</span>' +
+                    '<input type="text" class="cert-by" placeholder="Your name" value="' +
+                      esc(remembered('certifier')) + '"></label>' +
+                  '<label class="field"><span class="eyebrow">What was done</span>' +
+                    '<textarea class="cert-notes" placeholder="Replaced the bulb, re-torqued the lugs…"></textarea></label>' +
+                  '<div class="two">' +
+                    '<button class="primary cert" type="button" data-status="Repaired">Repaired</button>' +
+                    '<button class="secondary cert" type="button" data-status="Repair not needed">No repair needed</button>' +
+                  '</div>' +
+                '</div>'
+              : '<div class="pad small muted">Only the people on the certifier list can close this out.</div>') +
+          '</div>';
+        });
+      });
+    }
+
+    if (data.retired && data.retired.length) {
+      html += '<p class="small muted">Also in the history, but no longer on the Trucks tab: ' +
+        data.retired.map(esc).join(', ') + '.</p>';
+    }
+
+    viewEl.innerHTML = html;
+
+    Array.prototype.forEach.call(viewEl.querySelectorAll('button.cert'), function (btn) {
+      btn.addEventListener('click', function () { certify(btn); });
+    });
+  }
+
+  function certify(btn) {
+    var box = btn.closest('.certify');
+    var by = box.querySelector('.cert-by').value.trim();
+    var notes = box.querySelector('.cert-notes').value.trim();
+    var status = btn.getAttribute('data-status');
+
+    if (!by) { toast('Add your name — a certification has to say who made it.', true); return; }
+    if (status === 'Repair not needed' && !notes) {
+      toast('Say why no repair was needed.', true);
+      box.querySelector('.cert-notes').focus();
+      return;
+    }
+
+    remember('certifier', by);
+    Array.prototype.forEach.call(box.querySelectorAll('button'), function (b) { b.disabled = true; });
+    btn.textContent = 'Saving…';
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        toast(result.report + ' marked "' + result.status + '".');
+        state.fleet = null;
+        loadFleet();
+        // The inspect screen shows this truck's open defects, so it is stale now.
+        if (state.truck) loadContext();
+      })
+      .withFailureHandler(function (err) {
+        Array.prototype.forEach.call(box.querySelectorAll('button'), function (b) { b.disabled = false; });
+        btn.textContent = status === 'Repaired' ? 'Repaired' : 'No repair needed';
+        toast(errText(err), true);
+      })
+      .certifyRepair({
+        report: box.getAttribute('data-report'),
+        row: Number(box.getAttribute('data-row')),
+        status: status,
+        notes: notes,
+        certifiedBy: by
+      });
+  }
+
+  // =========================================================================
+  // History screen
+  // =========================================================================
+
+  function renderHistory() {
+    var h = state.history;
+    var chips = ['All'].concat(state.ctx.trucks);
+
+    var html = '<div class="card"><div class="pad">' +
+      '<input type="text" id="search" placeholder="Search reports, drivers, defects" value="' +
+        esc(h.search) + '">' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
+        chips.map(function (name) {
+          var on = (name === 'All' && !h.truck) || name === h.truck;
+          return '<button type="button" class="' + (on ? 'primary' : 'secondary') +
+            '" style="width:auto;padding:7px 12px;font-size:13px" data-filter="' +
+            esc(name === 'All' ? '' : name) + '">' + esc(name) + '</button>';
+        }).join('') +
+      '</div>' +
+    '</div></div>';
+
+    if (!h.reports.length) {
+      html += '<div class="card"><div class="pad muted small">' +
+        (h.search || h.truck ? 'Nothing matches that.' : 'No inspections on file yet.') +
+      '</div></div>';
+    } else {
+      html += '<div class="card"><h2>' + plural(h.total, 'report') + '</h2>' +
+        h.reports.map(recordHtml).join('') + '</div>';
+      if (h.more) {
+        html += '<button class="secondary" id="more" type="button">Load more</button>';
+      }
+    }
+
+    viewEl.innerHTML = html;
+
+    var search = $('search');
+    var timer = null;
+    search.addEventListener('input', function () {
+      h.search = this.value;
+      clearTimeout(timer);
+      timer = setTimeout(function () { loadHistory(true); }, 350);
+    });
+    Array.prototype.forEach.call(viewEl.querySelectorAll('[data-filter]'), function (btn) {
+      btn.addEventListener('click', function () {
+        h.truck = btn.getAttribute('data-filter');
+        loadHistory(true);
+      });
+    });
+    var more = $('more');
+    if (more) more.addEventListener('click', function () { loadHistory(false); });
+  }
+
+  function recordHtml(r) {
+    var pill = r.condition === 'Satisfactory'
+      ? '<span class="pill ok">Satisfactory</span>'
+      : (r.repairStatus === 'Repaired' || r.repairStatus === 'Repair not needed'
+          ? '<span class="pill done">' + esc(r.repairStatus) + '</span>'
+          : '<span class="pill bad">' + esc(r.repairStatus || 'Needs repair') + '</span>');
+
+    return '<div class="record">' +
+      '<div class="top">' +
+        '<span class="who">' + esc(r.truck) + ' <span class="muted small">' + esc(r.report) + '</span></span>' +
+        pill +
+      '</div>' +
+      '<div class="meta">' + esc(r.type) + ' · ' + esc(r.date) + ' ' + esc(r.time) +
+        ' · ' + esc(r.driver) +
+        (r.odometer !== '' ? ' · <span class="num">' + esc(r.odometer) + '</span> mi' : '') +
+      '</div>' +
+      (r.defects.length
+        ? '<ul class="defects">' + r.defects.map(function (d) {
+            return '<li>' + esc(d) + '</li>';
+          }).join('') + '</ul>'
+        : '') +
+      (r.remarks ? '<div class="remarks">' + esc(r.remarks) + '</div>' : '') +
+      (r.certifiedBy
+        ? '<div class="meta" style="margin-top:6px">' + esc(r.repairStatus) + ' · ' +
+          esc(r.certifiedBy) + ' · ' + esc(r.certifiedOn) +
+          (r.repairNotes ? ' · ' + esc(r.repairNotes) : '') + '</div>'
+        : '') +
+    '</div>';
+  }
+
+  // =========================================================================
+  // Router
+  // =========================================================================
+
+  function renderFleetBadge() {
+    var badge = $('fleetBadge');
+    if (!state.fleet) { badge.hidden = true; return; }
+    var n = state.fleet.fleet.reduce(function (sum, f) { return sum + f.openDefects.length; }, 0);
+    badge.hidden = n === 0;
+    badge.textContent = n;
+  }
+
+  function renderHeader() {
+    if (state.tab === 'inspect' && state.truck) {
+      titleEl.innerHTML = '<span class="truck">' + esc(state.truck) + '</span>';
+      subtitleEl.textContent = state.company;
+    } else {
+      titleEl.textContent = state.tab === 'fleet' ? 'Fleet'
+        : state.tab === 'history' ? 'History' : 'Vehicle Inspection';
+      subtitleEl.textContent = state.company;
+    }
+  }
+
+  function render() {
+    renderHeader();
+    if (!state.ctx) { viewEl.innerHTML = '<div class="spinner">Loading&hellip;</div>'; return; }
+    if (state.tab === 'inspect') renderInspect();
+    else if (state.tab === 'fleet') renderFleet();
+    else renderHistory();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'), function (btn) {
+    btn.addEventListener('click', function () {
+      var tab = btn.getAttribute('data-tab');
+      if (tab === state.tab) return;
+      state.tab = tab;
+      Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'), function (b) {
+        b.className = b === btn ? 'on' : '';
+      });
+      window.scrollTo(0, 0);
+      if (tab === 'history' && !state.history.reports.length) loadHistory(true);
+      render();
+    });
+  });
+
+  $('refresh').addEventListener('click', function () {
+    state.fleet = null;
+    state.history.reports = [];
+    state.history.offset = 0;
+    if (state.tab === 'history') loadHistory(true);
+    if (state.tab === 'fleet') loadFleet();
+    loadContext();
+  });
+
+  loadContext(function () { loadFleet(); });
+})();
+</script>
